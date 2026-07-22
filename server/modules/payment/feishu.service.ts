@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { PaymentConfig } from './payment.config';
 import type { OAuthToken } from './payment.types';
 
@@ -9,7 +9,6 @@ type FeishuEnvelope<T> = { code?: number; msg?: string; data?: T } & T;
 @Injectable()
 export class FeishuService {
   private readonly tokenCookie = 'payment_feishu_token';
-  private readonly stateCookie = 'payment_oauth_state';
   private readonly key: Buffer;
   private tenantToken?: { value: string; expiresAt: number };
 
@@ -54,23 +53,28 @@ export class FeishuService {
     return `${protocol}://${host}/api/oauth/callback`;
   }
 
-  createAuthorizeUrl(req: Request, res: Response): string {
+  createAuthorizeUrl(req: Request): string {
     const nonce = randomBytes(24).toString('base64url');
-    res.cookie(this.stateCookie, this.seal({ nonce, createdAt: Date.now() }), this.cookieOptions(10 * 60 * 1000));
+    const createdAt = Date.now().toString();
+    const statePayload = `${nonce}.${createdAt}`;
+    const state = `${statePayload}.${createHmac('sha256', this.key).update(statePayload).digest('base64url')}`;
     const query = new URLSearchParams({
       app_id: this.config.appId,
       redirect_uri: this.redirectUri(req),
       scope: this.config.oauthScopes,
-      state: nonce,
+      state,
     });
     return `https://accounts.feishu.cn/open-apis/authen/v1/authorize?${query}`;
   }
 
   async completeOAuth(req: Request, res: Response, code: string, state: string): Promise<string> {
-    const saved = this.unseal<{ nonce: string; createdAt: number }>(this.cookies(req)[this.stateCookie]);
-    const stateBytes = Buffer.from(state || '');
-    const nonceBytes = Buffer.from(saved?.nonce || '');
-    if (!saved || stateBytes.length !== nonceBytes.length || !timingSafeEqual(stateBytes, nonceBytes) || Date.now() - saved.createdAt > 10 * 60 * 1000) {
+    const [nonce = '', createdAt = '', signature = ''] = state.split('.');
+    const statePayload = `${nonce}.${createdAt}`;
+    const expected = createHmac('sha256', this.key).update(statePayload).digest('base64url');
+    const signatureBytes = Buffer.from(signature);
+    const expectedBytes = Buffer.from(expected);
+    const stateAge = Date.now() - Number(createdAt);
+    if (!nonce || !Number.isFinite(stateAge) || stateAge < 0 || stateAge > 10 * 60 * 1000 || signatureBytes.length !== expectedBytes.length || !timingSafeEqual(signatureBytes, expectedBytes)) {
       throw new HttpException('飞书授权状态已失效，请返回插件重新授权', HttpStatus.BAD_REQUEST);
     }
     const response = await fetch('https://open.feishu.cn/open-apis/authen/v2/oauth/token', {
@@ -88,7 +92,6 @@ export class FeishuService {
     if (!response.ok || payload.code) throw new HttpException(String(payload.error_description || payload.msg || '飞书授权失败'), HttpStatus.BAD_GATEWAY);
     const token = this.toToken(payload);
     this.writeToken(res, token);
-    res.clearCookie(this.stateCookie, { path: '/' });
     return this.seal(token);
   }
 

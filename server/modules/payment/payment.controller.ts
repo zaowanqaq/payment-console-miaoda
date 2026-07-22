@@ -18,13 +18,13 @@ export class PaymentController {
   async me(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const token = await this.feishu.userToken(req, res, false);
     if (!token) {
-      return { name: req.userContext?.userName || '当前用户', openId: '', authMode: 'oauth', verified: false, authorized: false, authorizeUrl: this.feishu.createAuthorizeUrl(req, res) };
+      return { name: req.userContext?.userName || '当前用户', openId: '', authMode: 'oauth', verified: false, authorized: false, authorizeUrl: this.feishu.createAuthorizeUrl(req) };
     }
     try {
       const user = await this.feishu.api<{ name?: string; open_id?: string }>('authen/v1/user_info', token);
       return { name: user.name || '飞书用户', openId: user.open_id || '', authMode: 'oauth', verified: true, authorized: true };
     } catch {
-      return { name: req.userContext?.userName || '当前用户', openId: '', authMode: 'oauth', verified: false, authorized: false, authorizeUrl: this.feishu.createAuthorizeUrl(req, res) };
+      return { name: req.userContext?.userName || '当前用户', openId: '', authMode: 'oauth', verified: false, authorized: false, authorizeUrl: this.feishu.createAuthorizeUrl(req) };
     }
   }
 
