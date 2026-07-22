@@ -348,7 +348,7 @@ function App() {
               <strong>{user?.name || '未识别'}</strong>
             </div>
             {!user?.authorized && user?.authorizeUrl ? (
-              <a className="primary-button" href={user.authorizeUrl} target="_blank" rel="noreferrer">
+              <a className="primary-button" href={user.authorizeUrl} target="_blank">
                 <ShieldCheck size={18} />授权飞书后继续<ChevronRight size={17} />
               </a>
             ) : <button className={`primary-button ${allowValidationErrors && hasValidationErrors ? 'warning-button' : ''}`} disabled={!isReady} onClick={() => setConfirming(true)}>
