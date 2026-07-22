@@ -52,6 +52,10 @@ function EmptyState({ message }: { message: string }) {
 }
 
 function App() {
+  const oauthParams = new URLSearchParams(window.location.search)
+  const isOAuthCallback = oauthParams.get('oauth') === 'payment' && oauthParams.has('code') && oauthParams.has('state')
+  const [oauthStatus, setOAuthStatus] = useState<'working' | 'done' | 'error'>('working')
+  const [oauthError, setOAuthError] = useState('')
   const [preview, setPreview] = useState<BatchPreview | null>(null)
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [baseContext, setBaseContext] = useState<BaseContext>({ embedded: false })
@@ -90,7 +94,26 @@ function App() {
     }
   }, [reason])
 
-  useEffect(() => { void refresh() }, [])
+  useEffect(() => {
+    if (isOAuthCallback) {
+      void api.completeOAuth(oauthParams.get('code') || '', oauthParams.get('state') || '')
+        .then(() => {
+          setOAuthStatus('done')
+          if (window.opener) {
+            window.opener.postMessage('payment-oauth-complete', window.location.origin)
+            window.setTimeout(() => window.close(), 500)
+          } else {
+            window.setTimeout(() => window.location.replace(window.location.pathname), 800)
+          }
+        })
+        .catch((cause) => {
+          setOAuthStatus('error')
+          setOAuthError(cause instanceof Error ? cause.message : '飞书授权失败')
+        })
+      return
+    }
+    void refresh()
+  }, [])
 
   useEffect(() => {
     const handleOAuth = (event: MessageEvent) => {
@@ -106,6 +129,18 @@ function App() {
     () => preview?.Records.filter((record) => record.Errors.length > 0).length ?? 0,
     [preview],
   )
+
+  if (isOAuthCallback) {
+    return (
+      <div className="oauth-callback">
+        {oauthStatus === 'working' && <LoaderCircle className="spin" size={28} />}
+        {oauthStatus === 'done' && <CheckCircle2 size={30} />}
+        {oauthStatus === 'error' && <AlertCircle size={30} />}
+        <h1>{oauthStatus === 'working' ? '正在完成飞书授权' : oauthStatus === 'done' ? '授权完成' : '授权未完成'}</h1>
+        <p>{oauthStatus === 'error' ? oauthError : oauthStatus === 'done' ? '窗口即将自动关闭' : '请稍候'}</p>
+      </div>
+    )
+  }
 
   async function submit() {
     setConfirming(false)

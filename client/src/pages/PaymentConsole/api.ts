@@ -20,6 +20,10 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  completeOAuth: (code: string, state: string) => request<{ ok: boolean }>('/api/oauth/callback', {
+    method: 'POST',
+    body: JSON.stringify({ code, state }),
+  }),
   currentUser: () => new URLSearchParams(window.location.search).has('demo')
     ? Promise.resolve<CurrentUser>({ name: '早晚', openId: 'demo', authMode: 'oauth', verified: true, authorized: true })
     : request<CurrentUser>('/api/auth/me'),

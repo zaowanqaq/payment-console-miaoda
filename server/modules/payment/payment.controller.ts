@@ -28,10 +28,10 @@ export class PaymentController {
     }
   }
 
-  @Get('oauth/callback')
-  async callback(@Req() req: Request, @Res() res: Response, @Query('code') code = '', @Query('state') state = '') {
-    await this.feishu.completeOAuth(req, res, code, state);
-    res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><title>授权完成</title></head><body><script>if(window.opener){window.opener.postMessage('payment-oauth-complete',location.origin);window.close()}else{location.replace('/')}</script><p>授权完成，可以关闭此页面。</p></body></html>`);
+  @Post('oauth/callback')
+  async callback(@Req() req: Request, @Res({ passthrough: true }) res: Response, @Body() body: { code?: string; state?: string }) {
+    await this.feishu.completeOAuth(req, res, body.code || '', body.state || '');
+    return { ok: true };
   }
 
   @Get('batches/preview')
