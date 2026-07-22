@@ -46,7 +46,7 @@ export const api = {
       tableId: context.tableId || '',
       viewId: context.viewId || '',
     })}`),
-  submit: (input: { reason: string; paymentEntity: string; expectedPaymentDate: string }) =>
+  submit: (input: { reason: string; paymentEntity: string; expectedPaymentDate: string; allowValidationErrors: boolean }) =>
     request<SubmitResult>('/api/batches/submit', {
       method: 'POST',
       body: JSON.stringify({ ...input, confirmed: true }),

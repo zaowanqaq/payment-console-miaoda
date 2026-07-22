@@ -65,6 +65,7 @@ function App() {
   const [paymentEntity, setPaymentEntity] = useState('游鸟科技')
   const [expectedPaymentDate, setExpectedPaymentDate] = useState(defaultPaymentDate)
   const [confirming, setConfirming] = useState(false)
+  const [allowValidationErrors, setAllowValidationErrors] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitStage, setSubmitStage] = useState(0)
   const [result, setResult] = useState<SubmitResult | null>(null)
@@ -147,7 +148,8 @@ function App() {
   }, [isOAuthCallback, refresh])
 
   const submitLabel = preview?.ApprovalType === 'Project' ? '准备审批附件' : '确认发起审批'
-  const isReady = Boolean(preview?.CanSubmit && reason.trim() && expectedPaymentDate && !submitting)
+  const hasValidationErrors = Boolean(preview?.Errors.length)
+  const isReady = Boolean(preview?.RecordCount && (preview.CanSubmit || allowValidationErrors) && reason.trim() && expectedPaymentDate && !submitting)
   const rowErrorCount = useMemo(
     () => preview?.Records.filter((record) => record.Errors.length > 0).length ?? 0,
     [preview],
@@ -173,7 +175,7 @@ function App() {
       setSubmitStage((stage) => Math.min(stage + 1, 4))
     }, 1200)
     try {
-      const nextResult = await api.submit({ reason, paymentEntity, expectedPaymentDate })
+      const nextResult = await api.submit({ reason, paymentEntity, expectedPaymentDate, allowValidationErrors })
       setSubmitStage(5)
       setResult(nextResult)
       if (!nextResult.Submitted && nextResult.ApprovalLink) {
@@ -299,11 +301,21 @@ function App() {
           <div className="validation-summary">
             <div className="validation-title">
               {preview?.CanSubmit ? <CheckCircle2 size={19} /> : <AlertCircle size={19} />}
-              <strong>{preview?.CanSubmit ? '批次条件完整' : '批次暂不可提交'}</strong>
+              <strong>{preview?.CanSubmit ? '批次条件完整' : allowValidationErrors ? '已允许带问题提交' : '批次暂不可提交'}</strong>
             </div>
             <span>{rowErrorCount > 0 ? `${rowErrorCount} 条明细存在问题` : '资源、项目及付款条件已核对'}</span>
             {preview?.Errors.slice(0, 4).map((item) => <p key={item}>{item}</p>)}
           </div>
+
+          {hasValidationErrors && preview?.RecordCount ? (
+            <label className="override-toggle">
+              <input type="checkbox" checked={allowValidationErrors} onChange={(event) => setAllowValidationErrors(event.target.checked)} />
+              <span>
+                <strong>允许带问题提交</strong>
+                <small>仅跳过本次预检拦截，具体审批仍由飞书流程审核</small>
+              </span>
+            </label>
+          ) : null}
 
           {preview?.ApprovalType === 'Project' && preview.RecordCount > 0 && (
             <div className="account-notice">
@@ -339,7 +351,7 @@ function App() {
               <a className="primary-button" href={user.authorizeUrl} target="_blank" rel="noreferrer">
                 <ShieldCheck size={18} />授权飞书后继续<ChevronRight size={17} />
               </a>
-            ) : <button className="primary-button" disabled={!isReady} onClick={() => setConfirming(true)}>
+            ) : <button className={`primary-button ${allowValidationErrors && hasValidationErrors ? 'warning-button' : ''}`} disabled={!isReady} onClick={() => setConfirming(true)}>
               {submitting ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}
               {submitting ? '正在处理' : submitLabel}
               {!submitting && <ChevronRight size={17} />}
@@ -353,8 +365,9 @@ function App() {
           <div className="dialog" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
             <button className="dialog-close" onClick={() => setConfirming(false)} title="关闭"><X size={17} /></button>
             <span className="dialog-icon"><Send size={22} /></span>
-            <h3>{preview.ApprovalType === 'Project' ? '确认准备审批' : '确认发起付款审批'}</h3>
+            <h3>{allowValidationErrors && hasValidationErrors ? '确认带问题提交' : preview.ApprovalType === 'Project' ? '确认准备审批' : '确认发起付款审批'}</h3>
             <p>{preview.RecordCount} 条付款明细，合计 {money(preview.TotalAmount)}</p>
+            {allowValidationErrors && hasValidationErrors && <div className="override-warning"><AlertCircle size={18} /><span>本批次存在 {preview.Errors.length} 项校验问题，仍将继续生成附件并提交审批。</span></div>}
             <dl>
               <div><dt>审批定义</dt><dd>{preview.DefinitionName}</dd></div>
               <div><dt>发起人</dt><dd>{user?.name}</dd></div>

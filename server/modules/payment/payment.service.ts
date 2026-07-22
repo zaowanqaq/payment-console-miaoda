@@ -202,7 +202,7 @@ export class PaymentService {
     );
   }
 
-  async submit(req: Request, res: Response, input: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; confirmed?: boolean }) {
+  async submit(req: Request, res: Response, input: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; confirmed?: boolean; allowValidationErrors?: boolean }) {
     if (input.confirmed !== true) throw new HttpException('提交前需要明确确认', HttpStatus.BAD_REQUEST);
     if (!input.reason?.trim()) throw new HttpException('付款事由不能为空', HttpStatus.BAD_REQUEST);
     if (!input.paymentEntity?.trim()) throw new HttpException('付款主体不能为空', HttpStatus.BAD_REQUEST);
@@ -211,7 +211,7 @@ export class PaymentService {
     const records = await this.listRecords(token, this.selectedFilter());
     const approvalType = this.resolveApprovalType(records);
     const errors = this.validate(records, approvalType);
-    if (errors.length) throw new HttpException(errors.join('\n'), HttpStatus.BAD_REQUEST);
+    if (errors.length && input.allowValidationErrors !== true) throw new HttpException(errors.join('\n'), HttpStatus.BAD_REQUEST);
 
     const batchId = this.batchId();
     const recordIds = records.map((record) => record.recordId);
