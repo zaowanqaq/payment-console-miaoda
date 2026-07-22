@@ -97,10 +97,10 @@ function App() {
   useEffect(() => {
     if (isOAuthCallback) {
       void api.completeOAuth(oauthParams.get('code') || '', oauthParams.get('state') || '')
-        .then(() => {
+        .then((result) => {
           setOAuthStatus('done')
           if (window.opener) {
-            window.opener.postMessage('payment-oauth-complete', window.location.origin)
+            window.opener.postMessage({ type: 'payment-oauth-complete', session: result.session }, window.location.origin)
             window.setTimeout(() => window.close(), 500)
           } else {
             window.setTimeout(() => window.location.replace(window.location.pathname), 800)
@@ -117,7 +117,11 @@ function App() {
 
   useEffect(() => {
     const handleOAuth = (event: MessageEvent) => {
-      if (event.origin === window.location.origin && event.data === 'payment-oauth-complete') void refresh()
+      const message = event.data as { type?: string; session?: string } | string
+      if (event.origin === window.location.origin && typeof message === 'object' && message?.type === 'payment-oauth-complete' && message.session) {
+        window.localStorage.setItem('payment_feishu_session', message.session)
+        void refresh()
+      }
     }
     window.addEventListener('message', handleOAuth)
     return () => window.removeEventListener('message', handleOAuth)
