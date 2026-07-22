@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import { api } from './api'
-import { resolveBaseContext, type BaseContext } from './base-context'
+import { resolveBaseContext, subscribeToActiveTableChanges, type BaseContext } from './base-context'
 import type { BatchPreview, CurrentUser, SubmitResult } from './types'
 import './payment-console.css'
 
@@ -122,6 +122,25 @@ function App() {
     window.addEventListener('message', handleOAuth)
     return () => window.removeEventListener('message', handleOAuth)
   }, [refresh])
+
+  useEffect(() => {
+    if (isOAuthCallback) return
+    let disposed = false
+    let unsubscribe: (() => void) | undefined
+    let refreshTimer: number | undefined
+    void subscribeToActiveTableChanges(() => {
+      window.clearTimeout(refreshTimer)
+      refreshTimer = window.setTimeout(() => void refresh(), 350)
+    }).then((dispose) => {
+      if (disposed) dispose()
+      else unsubscribe = dispose
+    }).catch(() => undefined)
+    return () => {
+      disposed = true
+      window.clearTimeout(refreshTimer)
+      unsubscribe?.()
+    }
+  }, [isOAuthCallback, refresh])
 
   const submitLabel = preview?.ApprovalType === 'Project' ? '准备审批附件' : '确认发起审批'
   const isReady = Boolean(preview?.CanSubmit && reason.trim() && expectedPaymentDate && !submitting)
