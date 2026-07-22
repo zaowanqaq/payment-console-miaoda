@@ -66,7 +66,7 @@ export class FeishuService {
     return `https://accounts.feishu.cn/open-apis/authen/v1/authorize?${query}`;
   }
 
-  async completeOAuth(req: Request, res: Response, code: string, state: string): Promise<void> {
+  async completeOAuth(req: Request, res: Response, code: string, state: string): Promise<string> {
     const saved = this.unseal<{ nonce: string; createdAt: number }>(this.cookies(req)[this.stateCookie]);
     const stateBytes = Buffer.from(state || '');
     const nonceBytes = Buffer.from(saved?.nonce || '');
@@ -86,8 +86,10 @@ export class FeishuService {
     });
     const payload = await response.json() as Record<string, unknown>;
     if (!response.ok || payload.code) throw new HttpException(String(payload.error_description || payload.msg || '飞书授权失败'), HttpStatus.BAD_GATEWAY);
-    this.writeToken(res, this.toToken(payload));
+    const token = this.toToken(payload);
+    this.writeToken(res, token);
     res.clearCookie(this.stateCookie, { path: '/' });
+    return this.seal(token);
   }
 
   private toToken(payload: Record<string, unknown>): OAuthToken {
@@ -106,7 +108,8 @@ export class FeishuService {
   }
 
   async userToken(req: Request, res: Response, required = true): Promise<string | null> {
-    let token = this.unseal<OAuthToken>(this.cookies(req)[this.tokenCookie]);
+    const headerSession = req.get('x-payment-session') || '';
+    let token = this.unseal<OAuthToken>(headerSession) || this.unseal<OAuthToken>(this.cookies(req)[this.tokenCookie]);
     if (!token || token.refreshExpiresAt <= Date.now()) {
       if (required) throw new HttpException('请先授权飞书身份', HttpStatus.UNAUTHORIZED);
       return null;
@@ -131,6 +134,7 @@ export class FeishuService {
       token = this.toToken(payload);
       this.writeToken(res, token);
     }
+    if (headerSession) res.setHeader('X-Payment-Session', this.seal(token));
     return token.accessToken;
   }
 

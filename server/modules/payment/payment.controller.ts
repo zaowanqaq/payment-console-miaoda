@@ -30,8 +30,8 @@ export class PaymentController {
 
   @Post('oauth/callback')
   async callback(@Req() req: Request, @Res({ passthrough: true }) res: Response, @Body() body: { code?: string; state?: string }) {
-    await this.feishu.completeOAuth(req, res, body.code || '', body.state || '');
-    return { ok: true };
+    const session = await this.feishu.completeOAuth(req, res, body.code || '', body.state || '');
+    return { ok: true, session };
   }
 
   @Get('batches/preview')
