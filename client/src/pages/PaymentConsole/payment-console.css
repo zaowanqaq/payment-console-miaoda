@@ -213,3 +213,90 @@ button { cursor: pointer; }
 .oauth-callback p {
   color: #68736c;
 }
+
+/* Base sidebar: keep the action surface readable at narrow widths. */
+.embedded-shell {
+  min-width: 320px;
+  background: #f7faf8;
+}
+.embedded-shell .app-header {
+  height: 54px;
+  padding: 0 12px;
+}
+.embedded-shell .brand-mark { width: 30px; height: 30px; }
+.embedded-shell .brand-lockup { gap: 8px; }
+.embedded-shell .brand-lockup h1 { font-size: 14px; }
+.embedded-shell .brand-lockup p,
+.embedded-shell .context-pill,
+.embedded-shell .identity div { display: none; }
+.embedded-shell .header-actions { gap: 7px; }
+.embedded-shell .workspace {
+  min-height: calc(100vh - 54px);
+  display: block;
+}
+.embedded-shell .records-pane {
+  padding: 14px 12px 16px;
+}
+.embedded-shell .section-heading {
+  display: block;
+  min-height: 0;
+  margin-bottom: 12px;
+}
+.embedded-shell .section-heading h2 { font-size: 18px; line-height: 24px; }
+.embedded-shell .batch-meta {
+  width: 100%;
+  margin-top: 10px;
+}
+.embedded-shell .batch-meta > div,
+.embedded-shell .batch-meta > div:last-child {
+  min-width: 0;
+  flex: 1;
+  padding: 7px 8px;
+}
+.embedded-shell .batch-meta strong { font-size: 12px; }
+.embedded-shell .batch-meta span { color: #42534a; }
+.embedded-shell .records-table-wrap {
+  min-height: 120px;
+  border-radius: 6px;
+}
+.embedded-shell .records-table th,
+.embedded-shell .records-table td { padding-left: 9px; padding-right: 9px; }
+.embedded-shell .records-table th { color: #42534a; background: #edf4f0; }
+.embedded-shell .records-table td { font-size: 11px; }
+.embedded-shell .record-name { font-size: 12px; }
+.embedded-shell .record-sub,
+.embedded-shell .condition-line { color: #42534a; }
+.embedded-shell .submit-pane {
+  position: static;
+  height: auto;
+  padding: 14px 12px 20px;
+  border-left: 0;
+  border-top: 1px solid #d7e2db;
+}
+.embedded-shell .validation-summary {
+  margin: 10px 0 12px;
+  color: #26382f;
+  background: #eef7f1;
+  border-color: #b9d8c5;
+}
+.embedded-shell .validation-summary span,
+.embedded-shell .validation-summary p { color: #42534a; }
+.embedded-shell .form-stack label > span,
+.embedded-shell .initiator-line span { color: #42534a; }
+.embedded-shell .form-stack input,
+.embedded-shell .form-stack textarea,
+.embedded-shell .form-stack select {
+  color: #17201c;
+  background: #ffffff;
+  border-color: #c8d7ce;
+}
+.embedded-shell .submit-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin: 12px -12px -20px;
+  padding: 10px 12px;
+  background: rgba(247, 250, 248, 0.97);
+  border-top: 1px solid #d7e2db;
+}
+.embedded-shell .primary-button { min-height: 40px; }

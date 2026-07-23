@@ -191,7 +191,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${baseContext.embedded ? 'embedded-shell' : ''}`}>
       <header className="app-header">
         <div className="brand-lockup">
           <span className="brand-mark"><CircleDollarSign size={20} /></span>
