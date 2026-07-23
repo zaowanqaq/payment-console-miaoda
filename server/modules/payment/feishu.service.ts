@@ -10,6 +10,7 @@ type FeishuEnvelope<T> = { code?: number; msg?: string; data?: T } & T;
 export class FeishuService {
   private readonly tokenCookie = 'payment_feishu_token';
   private readonly key: Buffer;
+  private readonly userTokens = new Map<string, OAuthToken>();
   private tenantToken?: { value: string; expiresAt: number };
 
   constructor(private readonly config: PaymentConfig) {
@@ -42,8 +43,15 @@ export class FeishuService {
     }
   }
 
+
+
   private cookieOptions(maxAge: number) {
     return { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' as const, path: '/', maxAge };
+  }
+
+  private userKey(req: Request): string | null {
+    const context = req.userContext as { userId?: string } | undefined;
+    return context?.userId ? String(context.userId) : null;
   }
 
   private redirectUri(req: Request): string {
@@ -91,6 +99,8 @@ export class FeishuService {
     const payload = await response.json() as Record<string, unknown>;
     if (!response.ok || payload.code) throw new HttpException(String(payload.error_description || payload.msg || '飞书授权失败'), HttpStatus.BAD_GATEWAY);
     const token = this.toToken(payload);
+    const userKey = this.userKey(req);
+    if (userKey) this.userTokens.set(userKey, token);
     this.writeToken(res, token);
     return this.seal(token);
   }
@@ -112,8 +122,10 @@ export class FeishuService {
 
   async userToken(req: Request, res: Response, required = true): Promise<string | null> {
     const headerSession = req.get('x-payment-session') || '';
-    let token = this.unseal<OAuthToken>(headerSession) || this.unseal<OAuthToken>(this.cookies(req)[this.tokenCookie]);
+    const userKey = this.userKey(req);
+    let token = this.unseal<OAuthToken>(headerSession) || this.unseal<OAuthToken>(this.cookies(req)[this.tokenCookie]) || (userKey ? this.userTokens.get(userKey) : undefined);
     if (!token || token.refreshExpiresAt <= Date.now()) {
+      if (userKey) this.userTokens.delete(userKey);
       if (required) throw new HttpException('请先授权飞书身份', HttpStatus.UNAUTHORIZED);
       return null;
     }
@@ -130,11 +142,13 @@ export class FeishuService {
       });
       const payload = await response.json() as Record<string, unknown>;
       if (!response.ok || payload.code) {
+        if (userKey) this.userTokens.delete(userKey);
         res.clearCookie(this.tokenCookie, { path: '/' });
         if (required) throw new HttpException('飞书授权已过期，请重新授权', HttpStatus.UNAUTHORIZED);
         return null;
       }
       token = this.toToken(payload);
+      if (userKey) this.userTokens.set(userKey, token);
       this.writeToken(res, token);
     }
     if (headerSession) res.setHeader('X-Payment-Session', this.seal(token));
