@@ -202,6 +202,23 @@ export class PaymentService {
     return fileCode;
   }
 
+  private async approvalSerialNumber(token: string, instanceCode: string): Promise<string | null> {
+    const delays = [0, 400, 800, 1600];
+    for (const delay of delays) {
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      try {
+        const detail = await this.feishu.api<{ serial_number?: string }>(
+          `approval/v4/instances/detail?${new URLSearchParams({ instance_code: instanceCode, locale: 'zh-CN' })}`,
+          token,
+        );
+        if (detail.serial_number) return detail.serial_number;
+      } catch {
+        // 流水编号回填是补充信息，不能反向导致已经创建成功的审批被标记为失败。
+      }
+    }
+    return null;
+  }
+
   private async updateRecords(token: string, recordIds: string[], patch: Record<string, unknown>): Promise<void> {
     await this.feishu.api(
       `base/v3/bases/${this.config.baseToken}/tables/${this.config.paymentTableId}/records/batch_update`,
@@ -272,8 +289,10 @@ export class PaymentService {
         { method: 'POST', body: JSON.stringify({ approval_code: this.config.cloudApprovalCode, form: JSON.stringify(form), uuid: batchId }) },
       );
       const finalLink = created.instance_link || approvalLink;
+      const serialNumber = await this.approvalSerialNumber(token, created.instance_code);
       await this.updateRecords(token, recordIds, {
         '审批实例Code': created.instance_code,
+        '付款流程编号': serialNumber,
         '付款审批链接': finalLink,
         '付款进度': '审批中',
         '批量提交状态': '已提交',
@@ -282,7 +301,7 @@ export class PaymentService {
       });
       return {
         Action: 'Submit', BatchId: batchId, ApprovalType: approvalType, Submitted: true,
-        InstanceCode: created.instance_code, InstanceLink: finalLink, RecordCount: records.length,
+        InstanceCode: created.instance_code, InstanceLink: finalLink, SerialNumber: serialNumber, RecordCount: records.length,
         BaseAmount: totalAmount, AmountWithServiceFee: amountWithServiceFee,
       };
     } catch (error) {
