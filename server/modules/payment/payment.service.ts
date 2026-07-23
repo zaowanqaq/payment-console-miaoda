@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { randomBytes } from 'node:crypto';
+import { FormData } from 'undici';
 import { FeishuService } from './feishu.service';
 import { PaymentConfig } from './payment.config';
 import type { AttachmentEntry, BaseRecord, BatchPreview } from './payment.types';
@@ -186,7 +187,7 @@ export class PaymentService {
     const fileBytes = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
     form.append('content', new Blob([fileBytes], { type: contentType }), name);
     const response = await fetch('https://open.feishu.cn/approval/openapi/v2/file/upload', {
-      method: 'POST', headers: { Authorization: `Bearer ${tenantToken}` }, body: form,
+      method: 'POST', headers: { Authorization: `Bearer ${tenantToken}` }, body: form as unknown as BodyInit,
     });
     const payload = await response.json() as { code?: number; msg?: string; data?: { code?: string } };
     const fileCode = payload.data?.code;

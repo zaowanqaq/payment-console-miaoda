@@ -192,6 +192,14 @@ function App() {
 
   return (
     <div className={`app-shell ${baseContext.embedded ? 'embedded-shell' : ''}`}>
+      {error && (
+        <div className="floating-error" role="alert" aria-live="assertive">
+          <AlertCircle size={18} />
+          <div><strong>操作未完成</strong><span>{error}</span></div>
+          <button onClick={() => setError('')} title="关闭"><X size={16} /></button>
+        </div>
+      )}
+
       <header className="app-header">
         <div className="brand-lockup">
           <span className="brand-mark"><CircleDollarSign size={20} /></span>

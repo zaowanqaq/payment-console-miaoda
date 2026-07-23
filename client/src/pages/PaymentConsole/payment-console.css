@@ -300,3 +300,36 @@ button { cursor: pointer; }
   border-top: 1px solid #d7e2db;
 }
 .embedded-shell .primary-button { min-height: 40px; }
+.floating-error {
+  position: fixed;
+  top: 66px;
+  right: 16px;
+  z-index: 80;
+  max-width: min(430px, calc(100vw - 32px));
+  padding: 12px 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: #6d2418;
+  background: #fff1ed;
+  border: 1px solid #e7a798;
+  border-radius: 7px;
+  box-shadow: 0 10px 28px rgba(108, 36, 24, 0.16);
+}
+.floating-error svg { flex: none; margin-top: 1px; }
+.floating-error div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.floating-error strong { font-size: 12px; }
+.floating-error span { color: #7d3a2d; font-size: 11px; line-height: 16px; overflow-wrap: anywhere; }
+.floating-error button { flex: none; width: 24px; height: 24px; color: #7d3a2d; }
+.dialog h3 { color: #17201c; }
+.dialog > p { color: #42534a; }
+.dialog dt { color: #526059; font-weight: 600; }
+.dialog dd { color: #17201c; }
+.dialog dl div { border-bottom-color: #dfe7e2; }
+.embedded-shell .floating-error { top: 60px; right: 10px; max-width: calc(100vw - 20px); }
+.embedded-shell .dialog { width: min(390px, calc(100vw - 20px)); padding: 20px; }
+.embedded-shell .dialog h3 { font-size: 18px; }
+.embedded-shell .dialog > p { color: #42534a; font-size: 12px; }
+.embedded-shell .dialog dl div { min-height: 42px; font-size: 12px; }
+.embedded-shell .dialog dt { color: #526059; }
+.embedded-shell .dialog dd { color: #17201c; }
