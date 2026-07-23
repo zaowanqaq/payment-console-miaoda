@@ -54,7 +54,7 @@ function EmptyState({ message }: { message: string }) {
 
 function App() {
   const oauthParams = new URLSearchParams(window.location.search)
-  const isOAuthCallback = oauthParams.get('oauth') === 'payment' && oauthParams.has('code') && oauthParams.has('state')
+  const isOAuthCallback = oauthParams.has('code') && oauthParams.has('state')
   const [oauthStatus, setOAuthStatus] = useState<'working' | 'done' | 'error'>('working')
   const [oauthError, setOAuthError] = useState('')
   const [preview, setPreview] = useState<BatchPreview | null>(null)

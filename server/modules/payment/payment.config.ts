@@ -23,6 +23,7 @@ export class PaymentConfig {
     date: required('CLOUD_WIDGET_DATE_ID'),
   };
   readonly oauthRedirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI?.trim();
+  readonly clientBasePath = process.env.CLIENT_BASE_PATH?.trim().replace(/\/$/, '') || '';
   readonly projectApprovalLink = process.env.PROJECT_APPROVAL_LINK?.trim() || '';
   readonly cloudApprovalLink = process.env.CLOUD_APPROVAL_LINK?.trim() || '';
   readonly oauthScopes = [

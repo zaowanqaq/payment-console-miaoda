@@ -58,7 +58,8 @@ export class FeishuService {
     if (this.config.oauthRedirectUri) return this.config.oauthRedirectUri;
     const protocol = req.headers['x-forwarded-proto']?.toString().split(',')[0] || req.protocol;
     const host = req.headers['x-forwarded-host']?.toString().split(',')[0] || req.get('host');
-    return `${protocol}://${host}/api/oauth/callback`;
+    // OAuth 先回到前端页面，再由前端 POST code/state，避免妙搭网关拦截 API GET 的 CSRF 校验。
+    return protocol + '://' + host + (this.config.clientBasePath || '');
   }
 
   createAuthorizeUrl(req: Request): string {
