@@ -183,11 +183,14 @@ export class PaymentService {
     const tenantToken = await this.feishu.tenantAccessToken();
     const boundary = `----PaymentConsole${randomBytes(12).toString('hex')}`;
     const safeName = name.replace(/["]/g, '_');
-    const dataPart = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="data"\r\n\r\n${JSON.stringify({ name, type: 'attachment' })}\r\n`, 'utf8');
+    // 飞书审批旧版上传接口要求 name/type/content 为三个独立的 multipart 字段，
+    // 不能把 name 和 type 包进 data JSON，否则接口会返回 invalid type。
+    const namePart = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="name"\r\n\r\n${name}\r\n`, 'utf8');
+    const typePart = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="type"\r\n\r\nattachment\r\n`, 'utf8');
     const contentHeader = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="content"; filename="${safeName}"\r\nContent-Type: ${contentType}\r\n\r\n`, 'utf8');
     const ending = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
     const filePart = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-    const body = Buffer.concat([dataPart, contentHeader, filePart, ending]);
+    const body = Buffer.concat([namePart, typePart, contentHeader, filePart, ending]);
     const response = await fetch('https://open.feishu.cn/approval/openapi/v2/file/upload', {
       method: 'POST',
       headers: { Authorization: `Bearer ${tenantToken}`, 'Content-Type': `multipart/form-data; boundary=${boundary}` },
