@@ -1,7 +1,6 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { randomBytes } from 'node:crypto';
-import { FormData } from 'undici';
 import { FeishuService } from './feishu.service';
 import { PaymentConfig } from './payment.config';
 import type { AttachmentEntry, BaseRecord, BatchPreview } from './payment.types';
@@ -182,12 +181,16 @@ export class PaymentService {
 
   private async uploadApprovalFile(buffer: Buffer, name: string, contentType = 'application/octet-stream'): Promise<string> {
     const tenantToken = await this.feishu.tenantAccessToken();
-    const form = new FormData();
-    form.append('data', JSON.stringify({ name, type: 'attachment' }));
-    const fileBytes = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
-    form.append('content', new Blob([fileBytes], { type: contentType }), name);
+    const boundary = `----PaymentConsole${randomBytes(12).toString('hex')}`;
+    const safeName = name.replace(/["]/g, '_');
+    const dataPart = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="data"\r\n\r\n${JSON.stringify({ name, type: 'attachment' })}\r\n`, 'utf8');
+    const contentHeader = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="content"; filename="${safeName}"\r\nContent-Type: ${contentType}\r\n\r\n`, 'utf8');
+    const ending = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+    const body = Buffer.concat([dataPart, contentHeader, buffer, ending]);
     const response = await fetch('https://open.feishu.cn/approval/openapi/v2/file/upload', {
-      method: 'POST', headers: { Authorization: `Bearer ${tenantToken}` }, body: form as unknown as BodyInit,
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tenantToken}`, 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+      body,
     });
     const payload = await response.json() as { code?: number; msg?: string; data?: { code?: string } };
     const fileCode = payload.data?.code;
