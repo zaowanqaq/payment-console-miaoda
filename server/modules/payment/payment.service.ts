@@ -186,7 +186,8 @@ export class PaymentService {
     const dataPart = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="data"\r\n\r\n${JSON.stringify({ name, type: 'attachment' })}\r\n`, 'utf8');
     const contentHeader = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="content"; filename="${safeName}"\r\nContent-Type: ${contentType}\r\n\r\n`, 'utf8');
     const ending = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
-    const body = Buffer.concat([dataPart, contentHeader, buffer, ending]);
+    const filePart = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+    const body = Buffer.concat([dataPart, contentHeader, filePart, ending]);
     const response = await fetch('https://open.feishu.cn/approval/openapi/v2/file/upload', {
       method: 'POST',
       headers: { Authorization: `Bearer ${tenantToken}`, 'Content-Type': `multipart/form-data; boundary=${boundary}` },
@@ -288,7 +289,8 @@ export class PaymentService {
         '提交失败原因': `提审失败：${error instanceof Error ? error.message : String(error)}`,
         '申请付款选择框': true,
       }).catch(() => undefined);
-      throw error;
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new HttpException(`提审失败：${detail}`, HttpStatus.BAD_GATEWAY);
     }
   }
 

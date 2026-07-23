@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleDollarSign,
+  WalletCards,
   FileCheck2,
   Link2,
   LoaderCircle,
@@ -202,7 +203,7 @@ function App() {
 
       <header className="app-header">
         <div className="brand-lockup">
-          <span className="brand-mark"><CircleDollarSign size={20} /></span>
+          <span className="brand-mark"><WalletCards size={20} /></span>
           <div>
             <h1>付款提审台</h1>
             <p>媒介项目费控</p>
