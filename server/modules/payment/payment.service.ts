@@ -345,6 +345,25 @@ export class PaymentService {
   }
 
   private async updateRecords(token: string, recordIds: string[], patch: Record<string, unknown>): Promise<void> {
+    const datetimeFields = new Set([
+      '期望付款日期',
+      '审批附件上传时间',
+      '批次提交时间',
+      '审批回填时间',
+      '审批完成时间',
+      '最后校验时间',
+      '审批源最后更新时间',
+    ]);
+    const fields = Object.fromEntries(Object.entries(patch).map(([field, value]) => {
+      if (field === '付款审批链接' && typeof value === 'string') {
+        return [field, { link: value, text: '打开付款审批' }];
+      }
+      if (datetimeFields.has(field) && typeof value === 'string') {
+        const timestamp = Date.parse(`${value.replace(' ', 'T')}+08:00`);
+        if (!Number.isNaN(timestamp)) return [field, timestamp];
+      }
+      return [field, value];
+    }));
     // The Base v3 batch-update method is restricted for this app. Update records
     // one at a time through the generally available Bitable v1 endpoint instead.
     // Keep the writes sequential because a table rejects concurrent mutations.
@@ -352,7 +371,7 @@ export class PaymentService {
       await this.feishu.api(
         `bitable/v1/apps/${this.config.baseToken}/tables/${this.config.paymentTableId}/records/${recordId}`,
         token,
-        { method: 'PUT', body: JSON.stringify({ fields: patch }) },
+        { method: 'PUT', body: JSON.stringify({ fields }) },
       );
     }
   }
