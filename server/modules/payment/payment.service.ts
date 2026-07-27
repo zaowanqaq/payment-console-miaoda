@@ -345,11 +345,16 @@ export class PaymentService {
   }
 
   private async updateRecords(token: string, recordIds: string[], patch: Record<string, unknown>): Promise<void> {
-    await this.feishu.api(
-      `base/v3/bases/${this.config.baseToken}/tables/${this.config.paymentTableId}/records/batch_update`,
-      token,
-      { method: 'POST', body: JSON.stringify({ record_id_list: recordIds, patch }) },
-    );
+    // The Base v3 batch-update method is restricted for this app. Update records
+    // one at a time through the generally available Bitable v1 endpoint instead.
+    // Keep the writes sequential because a table rejects concurrent mutations.
+    for (const recordId of recordIds) {
+      await this.feishu.api(
+        `bitable/v1/apps/${this.config.baseToken}/tables/${this.config.paymentTableId}/records/${recordId}`,
+        token,
+        { method: 'PUT', body: JSON.stringify({ fields: patch }) },
+      );
+    }
   }
 
   private async discoverSyncedInstance(token: string, batchId: string, definitionName: string) {
