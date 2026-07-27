@@ -64,7 +64,7 @@ export class PaymentService {
   }
 
   private paymentMethod(record: BaseRecord): string {
-    return this.text(record.fields['默认收款方式（自动带出）']) || '';
+    return this.text(record.fields['付款形式']) || '';
   }
 
   private resolveApprovalType(records: BaseRecord[]): ApprovalType {
@@ -89,6 +89,12 @@ export class PaymentService {
     if (this.resolveApprovalType([record]) === 'Unknown') errors.push(`${name}：资源入库未带出有效付款形式。`);
     const linkageError = this.text(record.fields['校验错误']);
     if (linkageError) errors.push(...linkageError.split('\n').filter(Boolean));
+    const selectedPayment = this.paymentMethod(record);
+    const sourcePayment = this.text(record.fields['资源支付形式（自动带出）']);
+    if (!['对公支付', '小荷包支付', '云账户支付'].includes(selectedPayment)) errors.push(`${name}：请选择付款形式。`);
+    if (sourcePayment && selectedPayment && sourcePayment !== selectedPayment) {
+      errors.push(`${name}：人工选择的付款形式与资源入库审批不一致（资源审批为${sourcePayment}）。`);
+    }
     return errors;
   }
 
@@ -170,7 +176,7 @@ export class PaymentService {
         '项目名称': projectRecord?.fields['项目名称'] ?? record.fields['项目名称'],
         '资源账号（自动带出）': resourceRecord?.fields['资源代称'] ?? record.fields['资源账号（自动带出）'],
         '收款人（自动带出）': resourceRecord?.fields['真实姓名'] ?? record.fields['收款人（自动带出）'],
-        '默认收款方式（自动带出）': resourceRecord?.fields['资源支付形式'] ?? record.fields['默认收款方式（自动带出）'],
+        '资源支付形式（自动带出）': resourceRecord?.fields['资源支付形式'] ?? record.fields['资源支付形式（自动带出）'],
         '收款账户（自动带出）': resourceRecord?.fields['收款账户'],
         '银行卡号（自动带出）': resourceRecord?.fields['银行卡号'],
       };
@@ -186,8 +192,6 @@ export class PaymentService {
         .filter((item): item is string => Boolean(item))
         .sort();
       const patch: Record<string, unknown> = {
-        '项目关联键': projectCode || projectName,
-        '资源关联键': `${projectCode || projectName}|${resourceAlias}|${expectedResourcePayment}`,
         '校验状态': errors.length ? (errors.some((error) => error.includes('人工确认')) ? '需人工确认' : '阻断') : '通过',
         '校验错误': errors.join('\n') || null,
         '最后校验时间': nowText,
@@ -225,7 +229,7 @@ export class PaymentService {
       ProjectCode: this.text(record.fields['项目编号（自动带出）']),
       ResourceAccount: this.text(record.fields['资源账号（自动带出）']),
       Recipient: this.text(record.fields['收款人（自动带出）']),
-      PaymentMethod: this.text(record.fields['默认收款方式（自动带出）']),
+      PaymentMethod: this.text(record.fields['付款形式']),
       Cost: this.number(record.fields['实际成本']),
       AcceptanceStatus: this.text(record.fields['验收状态']),
       ContractStatus: this.text(record.fields['合同/订单状态']),
@@ -266,7 +270,7 @@ export class PaymentService {
       batchId, record.recordId, this.text(record.fields['付款明细名称']), this.text(record.fields['项目编号（自动带出）']),
       this.text(record.fields['项目名称']), this.text(record.fields['资源账号（自动带出）']), this.text(record.fields['收款人（自动带出）']),
       this.text(record.fields['平台/合作需求类型']), this.text(record.fields['账号']), this.text(record.fields['话题/内容']), this.text(record.fields['链接']),
-      this.number(record.fields['实际成本']), this.text(record.fields['资源税点（自动带出）']), this.text(record.fields['默认收款方式（自动带出）']),
+      this.number(record.fields['实际成本']), this.text(record.fields['税点']), this.text(record.fields['付款形式']),
     ]);
     return Buffer.from(`\uFEFF${[columns, ...rows].map((row) => row.map(quote).join(',')).join('\r\n')}`, 'utf8');
   }
@@ -411,12 +415,6 @@ export class PaymentService {
         '付款主体': input.paymentEntity.trim(),
         '期望付款日期': `${input.expectedPaymentDate} 00:00:00`,
         '付款审批链接': approvalLink,
-        '付款批次键': [
-          approvalType,
-          input.paymentEntity.trim(),
-          this.text(records[0]?.fields['资源账号（自动带出）']) || this.text(records[0]?.fields['收款人（自动带出）']),
-          input.expectedPaymentDate,
-        ].join('|'),
         '审批附件Codes': JSON.stringify({ detail: detailCode, evidence: evidenceCodes }),
         '审批附件上传时间': nowText,
         '提交失败原因': null,
