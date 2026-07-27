@@ -57,6 +57,7 @@ function App() {
   const isOAuthCallback = oauthParams.has('code') && oauthParams.has('state')
   const [oauthStatus, setOAuthStatus] = useState<'working' | 'done' | 'error'>('working')
   const [oauthError, setOAuthError] = useState('')
+  const [authorizationPending, setAuthorizationPending] = useState(false)
   const [preview, setPreview] = useState<BatchPreview | null>(null)
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [baseContext, setBaseContext] = useState<BaseContext>({ embedded: false })
@@ -78,6 +79,7 @@ function App() {
       const context = await resolveBaseContext()
       const nextUser = await api.currentUser()
       setUser(nextUser)
+      if (nextUser.authorized) setAuthorizationPending(false)
       setBaseContext(context)
       if (!nextUser.authorized) {
         setPreview(null)
@@ -133,6 +135,26 @@ function App() {
   }, [refresh])
 
   useEffect(() => {
+    if (isOAuthCallback || user?.authorized) return
+    const checkAuthorization = () => {
+      if (!document.hidden) void refresh()
+    }
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'payment_feishu_session' && event.newValue) void refresh()
+    }
+    const pollTimer = window.setInterval(checkAuthorization, authorizationPending ? 1200 : 5000)
+    window.addEventListener('focus', checkAuthorization)
+    window.addEventListener('storage', handleStorage)
+    document.addEventListener('visibilitychange', checkAuthorization)
+    return () => {
+      window.clearInterval(pollTimer)
+      window.removeEventListener('focus', checkAuthorization)
+      window.removeEventListener('storage', handleStorage)
+      document.removeEventListener('visibilitychange', checkAuthorization)
+    }
+  }, [authorizationPending, isOAuthCallback, refresh, user?.authorized])
+
+  useEffect(() => {
     if (isOAuthCallback) return
     let disposed = false
     let unsubscribe: (() => void) | undefined
@@ -151,7 +173,7 @@ function App() {
     }
   }, [isOAuthCallback, refresh])
 
-  const submitLabel = preview?.ApprovalType === 'Cloud' ? '确认发起审批' : '准备审批附件'
+  const submitLabel = preview?.AutoSubmitEnabled ? '确认发起审批' : '准备审批附件'
   const hasValidationErrors = Boolean(preview?.Errors.length)
   const isReady = Boolean(preview?.RecordCount && (preview.CanSubmit || allowValidationErrors) && reason.trim() && expectedPaymentDate && !submitting)
   const rowErrorCount = useMemo(
@@ -331,7 +353,7 @@ function App() {
             </label>
           ) : null}
 
-          {preview?.ApprovalType !== 'Cloud' && preview?.RecordCount > 0 && (
+          {!preview?.AutoSubmitEnabled && preview?.RecordCount > 0 && (
             <div className="account-notice">
               <ShieldCheck size={18} />
               <span>
@@ -366,8 +388,14 @@ function App() {
               <strong>{user?.name || '未识别'}</strong>
             </div>
             {!user?.authorized && user?.authorizeUrl ? (
-              <a className="primary-button" href={user.authorizeUrl} target="_blank">
-                <ShieldCheck size={18} />授权飞书后继续<ChevronRight size={17} />
+              <a
+                className="primary-button"
+                href={user.authorizeUrl}
+                target="_blank"
+                rel="opener"
+                onClick={() => setAuthorizationPending(true)}
+              >
+                <ShieldCheck size={18} />{authorizationPending ? '等待授权完成' : '授权飞书后继续'}<ChevronRight size={17} />
               </a>
             ) : <button className={`primary-button ${allowValidationErrors && hasValidationErrors ? 'warning-button' : ''}`} disabled={!isReady} onClick={() => setConfirming(true)}>
               {submitting ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}
@@ -383,7 +411,7 @@ function App() {
           <div className="dialog" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
             <button className="dialog-close" onClick={() => setConfirming(false)} title="关闭"><X size={17} /></button>
             <span className="dialog-icon"><Send size={22} /></span>
-            <h3>{allowValidationErrors && hasValidationErrors ? '确认带问题提交' : preview.ApprovalType === 'Cloud' ? '确认发起付款审批' : '确认准备审批'}</h3>
+            <h3>{allowValidationErrors && hasValidationErrors ? '确认带问题提交' : preview.AutoSubmitEnabled ? '确认发起付款审批' : '确认准备审批'}</h3>
             <p>{preview.RecordCount} 条付款明细，合计 {money(preview.TotalAmount)}</p>
             {allowValidationErrors && hasValidationErrors && <div className="override-warning"><AlertCircle size={18} /><span>本批次存在 {preview.Errors.length} 项校验问题，仍将继续生成附件并提交审批。</span></div>}
             <dl>

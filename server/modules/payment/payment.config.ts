@@ -34,6 +34,19 @@ export class PaymentConfig {
     date: optional('CLOUD_WIDGET_DATE_ID'),
   };
   readonly cloudAutoSubmitEnabled = Object.values(this.cloudWidgets).every(Boolean);
+  readonly corporateWidgets = {
+    reason: optional('PROJECT_WIDGET_REASON_ID'),
+    detail: optional('PROJECT_WIDGET_DETAIL_ATTACHMENT_ID'),
+    evidence: optional('PROJECT_WIDGET_EVIDENCE_ATTACHMENT_ID'),
+    amount: optional('PROJECT_WIDGET_AMOUNT_ID'),
+    date: optional('PROJECT_WIDGET_DATE_ID'),
+  };
+  readonly corporateAutoSubmitEnabled = [
+    this.corporateWidgets.reason,
+    this.corporateWidgets.detail,
+    this.corporateWidgets.amount,
+    this.corporateWidgets.date,
+  ].every(Boolean);
   readonly oauthRedirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI?.trim();
   readonly clientBasePath = process.env.CLIENT_BASE_PATH?.trim().replace(/\/$/, '') || '';
   readonly corporateApprovalLink = process.env.PROJECT_APPROVAL_LINK?.trim() || '';

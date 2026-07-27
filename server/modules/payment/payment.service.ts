@@ -256,6 +256,11 @@ export class PaymentService {
           : approvalType === 'Corporate'
             ? '【测试】付款'
             : '待识别付款审批',
+      AutoSubmitEnabled: approvalType === 'Cloud'
+        ? this.config.cloudAutoSubmitEnabled
+        : approvalType === 'Corporate'
+          ? this.config.corporateAutoSubmitEnabled
+          : false,
       RecordCount: records.length,
       TotalAmount: items.reduce((sum, item) => sum + (item.Cost || 0), 0),
       CanSubmit: records.length > 0 && errors.length === 0,
@@ -271,11 +276,15 @@ export class PaymentService {
   }
 
   private csv(records: BaseRecord[], batchId: string): Buffer {
-    const columns = ['付款批次号', '付款记录ID', '付款明细名称', '项目编号', '项目名称', '资源账号', '收款人', '平台类型', '账号', '话题内容', '链接', '实际成本', '税点', '付款方式'];
+    const columns = [
+      '付款批次号', '付款记录ID', '付款明细名称', '项目编号', '项目名称', '资源账号', '收款人',
+      '收款账户', '银行卡号', '对应合同', '平台类型', '账号', '话题内容', '链接', '实际成本', '税点', '付款方式',
+    ];
     const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const rows = records.map((record) => [
       batchId, record.recordId, this.text(record.fields['付款明细名称']), this.text(record.fields['项目编号（自动带出）']),
       this.text(record.fields['项目名称']), this.text(record.fields['资源账号（自动带出）']), this.text(record.fields['收款人（自动带出）']),
+      this.text(record.fields['收款账户（自动带出）']), this.text(record.fields['银行卡号（自动带出）']), this.text(record.fields['对应合同（自动带出）']),
       this.text(record.fields['平台/合作需求类型']), this.text(record.fields['账号']), this.text(record.fields['话题/内容']), this.text(record.fields['链接']),
       this.number(record.fields['实际成本']), this.text(record.fields['税点']), this.text(record.fields['付款形式']),
     ]);
@@ -452,14 +461,20 @@ export class PaymentService {
         '申请付款选择框': false,
       });
 
-      if (approvalType !== 'Cloud' || !this.config.cloudAutoSubmitEnabled) {
+      const widgets = approvalType === 'Cloud' ? this.config.cloudWidgets : this.config.corporateWidgets;
+      const autoSubmitEnabled = approvalType === 'Cloud'
+        ? this.config.cloudAutoSubmitEnabled
+        : approvalType === 'Corporate'
+          ? this.config.corporateAutoSubmitEnabled
+          : false;
+      if (!autoSubmitEnabled) {
         const blocker = approvalType === 'Corporate'
-          ? `普通付款包含飞书 API 暂不支持的收款银行账户控件。附件已自动上传，请打开审批补选账户，并在付款事由中保留 [${batchId}] 后提交。`
+          ? `普通付款自动提审定义尚未完成配置。附件已自动上传，请在付款事由中保留 [${batchId}] 后提交；管理员完成精简定义后，插件将直接自动提审。`
           : approvalType === 'Wallet'
             ? '小荷包审批需要选择审批人并确认收款二维码。附件已准备，请打开原生审批完成提交。'
             : `云账户审批当前未暴露可用控件 ID。为避免写入错误审批，已准备材料，请在付款事由中保留 [${batchId}] 并通过原生审批提交。`;
         await this.updateRecords(token, recordIds, {
-          '付款进度': approvalType === 'Corporate' ? '待补充账户' : '待申请',
+          '付款进度': '待申请',
           '批量提交状态': '待提单',
           '提交失败原因': null,
         });
@@ -470,16 +485,20 @@ export class PaymentService {
       }
 
       const amountWithServiceFee = Math.round(totalAmount * 1.062 * 100) / 100;
-      const form = [
-        { id: this.config.cloudWidgets.reason, type: 'textarea', value: reason },
-        { id: this.config.cloudWidgets.detail, type: 'attachmentV2', value: [detailCode] },
-        { id: this.config.cloudWidgets.evidence, type: 'attachmentV2', value: evidenceCodes },
-        { id: this.config.cloudWidgets.amount, type: 'amount', value: amountWithServiceFee, currency: 'CNY' },
-        { id: this.config.cloudWidgets.date, type: 'date', value: `${input.expectedPaymentDate}T00:00:00+08:00` },
+      const approvalAmount = approvalType === 'Cloud' ? amountWithServiceFee : totalAmount;
+      const form: Array<Record<string, unknown>> = [
+        { id: widgets.reason, type: 'textarea', value: reason },
+        { id: widgets.detail, type: 'attachmentV2', value: [detailCode] },
+        { id: widgets.amount, type: 'amount', value: approvalAmount, currency: 'CNY' },
+        { id: widgets.date, type: 'date', value: `${input.expectedPaymentDate}T00:00:00+08:00` },
       ];
+      if (widgets.evidence && evidenceCodes.length) {
+        form.splice(2, 0, { id: widgets.evidence, type: 'attachmentV2', value: evidenceCodes });
+      }
+      const approvalCode = approvalType === 'Cloud' ? this.config.cloudApprovalCode : this.config.corporateApprovalCode;
       const created = await this.feishu.api<{ instance_code: string; instance_link?: string }>(
         'approval/v4/instances/initiate?user_id_type=open_id', token,
-        { method: 'POST', body: JSON.stringify({ approval_code: this.config.cloudApprovalCode, form: JSON.stringify(form), uuid: batchId }) },
+        { method: 'POST', body: JSON.stringify({ approval_code: approvalCode, form: JSON.stringify(form), uuid: batchId }) },
       );
       const finalLink = created.instance_link || approvalLink;
       const serialNumber = await this.approvalSerialNumber(token, created.instance_code);

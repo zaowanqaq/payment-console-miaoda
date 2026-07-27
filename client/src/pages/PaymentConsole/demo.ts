@@ -4,6 +4,7 @@ export const demoPreview: BatchPreview = {
   Action: 'Preview',
   ApprovalType: 'Cloud',
   DefinitionName: '【测试】云账户批量付款资源（仅达人）',
+  AutoSubmitEnabled: true,
   RecordCount: 3,
   TotalAmount: 18650,
   CanSubmit: true,

@@ -39,6 +39,7 @@ export type BatchPreview = {
   Action: 'Preview';
   ApprovalType: 'Cloud' | 'Corporate' | 'Wallet' | 'Unknown';
   DefinitionName: string;
+  AutoSubmitEnabled: boolean;
   RecordCount: number;
   TotalAmount: number;
   CanSubmit: boolean;
