@@ -120,16 +120,23 @@ export class PaymentService {
   }
 
   private async listTableRecords(token: string, tableId: string, filter?: Record<string, unknown>): Promise<BaseRecord[]> {
-    const query = new URLSearchParams({ limit: '500', offset: '0' });
-    if (filter) query.set('filter', JSON.stringify(filter));
-    const payload = await this.feishu.api<BaseListResponse>(
-      `base/v3/bases/${this.config.baseToken}/tables/${tableId}/records?${query}`,
-      token,
-    );
-    return payload.record_id_list.map((recordId, row) => ({
-      recordId,
-      fields: Object.fromEntries(payload.fields.map((field, column) => [field, payload.data[row]?.[column]])),
-    }));
+    const records: BaseRecord[] = [];
+    let offset = 0;
+    while (true) {
+      const query = new URLSearchParams({ limit: '200', offset: String(offset) });
+      if (filter) query.set('filter', JSON.stringify(filter));
+      const payload = await this.feishu.api<BaseListResponse>(
+        `base/v3/bases/${this.config.baseToken}/tables/${tableId}/records?${query}`,
+        token,
+      );
+      records.push(...payload.record_id_list.map((recordId, row) => ({
+        recordId,
+        fields: Object.fromEntries(payload.fields.map((field, column) => [field, payload.data[row]?.[column]])),
+      })));
+      if (!payload.has_more || payload.record_id_list.length === 0) break;
+      offset += payload.record_id_list.length;
+    }
+    return records;
   }
 
   private listRecords(token: string, filter: Record<string, unknown>): Promise<BaseRecord[]> {
