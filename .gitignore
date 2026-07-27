@@ -49,6 +49,7 @@ tmp/
 temp/
 .playwright-cli/
 /output/
+/test-artifacts/
 
 # Lock files (keep package-lock.json for consistent installs)
 yarn.lock
