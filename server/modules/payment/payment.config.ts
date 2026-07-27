@@ -23,7 +23,7 @@ export class PaymentConfig {
   readonly paymentSyncTableId = required('PAYMENT_SYNC_TABLE_ID');
   readonly cloudSyncTableId = required('CLOUD_SYNC_TABLE_ID');
   readonly walletSyncTableId = required('WALLET_SYNC_TABLE_ID');
-  readonly projectApprovalCode = required('PROJECT_APPROVAL_CODE');
+  readonly corporateApprovalCode = required('PROJECT_APPROVAL_CODE');
   readonly cloudApprovalCode = required('CLOUD_APPROVAL_CODE');
   readonly walletApprovalCode = required('WALLET_APPROVAL_CODE');
   readonly cloudWidgets = {
@@ -36,7 +36,7 @@ export class PaymentConfig {
   readonly cloudAutoSubmitEnabled = Object.values(this.cloudWidgets).every(Boolean);
   readonly oauthRedirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI?.trim();
   readonly clientBasePath = process.env.CLIENT_BASE_PATH?.trim().replace(/\/$/, '') || '';
-  readonly projectApprovalLink = process.env.PROJECT_APPROVAL_LINK?.trim() || '';
+  readonly corporateApprovalLink = process.env.PROJECT_APPROVAL_LINK?.trim() || '';
   readonly cloudApprovalLink = process.env.CLOUD_APPROVAL_LINK?.trim() || '';
   readonly walletApprovalLink = process.env.WALLET_APPROVAL_LINK?.trim() || '';
   readonly oauthScopes = [

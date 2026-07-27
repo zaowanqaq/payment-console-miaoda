@@ -37,7 +37,7 @@ export type BatchRecord = {
 
 export type BatchPreview = {
   Action: 'Preview';
-  ApprovalType: 'Cloud' | 'Project' | 'Wallet';
+  ApprovalType: 'Cloud' | 'Corporate' | 'Wallet' | 'Unknown';
   DefinitionName: string;
   RecordCount: number;
   TotalAmount: number;

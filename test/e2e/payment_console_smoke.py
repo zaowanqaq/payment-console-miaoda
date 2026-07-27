@@ -57,7 +57,7 @@ with sync_playwright() as playwright:
     dialog = page.get_by_role("dialog")
     assert dialog.get_by_role("heading", name="确认发起付款审批").is_visible()
     assert dialog.get_by_text("3 条付款明细，合计 ¥18,650.00").is_visible()
-    assert dialog.get_by_text("云账户多收款人").is_visible()
+    assert dialog.get_by_text("【测试】云账户批量付款资源（仅达人）").is_visible()
     assert dialog.get_by_text("早晚").is_visible()
     dialog.get_by_role("button", name="取消").click()
     assert dialog.count() == 0
