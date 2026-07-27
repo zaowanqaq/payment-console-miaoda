@@ -148,7 +148,7 @@ function App() {
     }
   }, [isOAuthCallback, refresh])
 
-  const submitLabel = preview?.ApprovalType === 'Project' ? '准备审批附件' : '确认发起审批'
+  const submitLabel = preview?.ApprovalType === 'Cloud' ? '确认发起审批' : '准备审批附件'
   const hasValidationErrors = Boolean(preview?.Errors.length)
   const isReady = Boolean(preview?.RecordCount && (preview.CanSubmit || allowValidationErrors) && reason.trim() && expectedPaymentDate && !submitting)
   const rowErrorCount = useMemo(
@@ -275,7 +275,9 @@ function App() {
                         </td>
                         <td>
                           <span className="primary-text">{record.ProjectName || '未关联项目'}</span>
-                          <span className="record-sub">{record.ResourceAccount || '未关联资源'}</span>
+                          <span className="record-sub">
+                            {record.ProjectLinked && record.ResourceLinked ? '审批关联已校验' : record.ResourceAccount || '未关联资源'}
+                          </span>
                         </td>
                         <td>
                           <div className="condition-line"><StatusDot valid={record.AcceptanceStatus === '已验收'} />{record.AcceptanceStatus || '待验收'}</div>
@@ -326,10 +328,14 @@ function App() {
             </label>
           ) : null}
 
-          {preview?.ApprovalType === 'Project' && preview.RecordCount > 0 && (
+          {preview?.ApprovalType !== 'Cloud' && preview?.RecordCount > 0 && (
             <div className="account-notice">
               <ShieldCheck size={18} />
-              <span>该审批包含银行账户控件，本次将自动完成明细及附件准备。</span>
+              <span>
+                {preview.ApprovalType === 'Wallet'
+                  ? '小荷包审批需要在原生审批中确认二维码和审批人，本次先准备明细及附件。'
+                  : '该审批包含银行账户控件，本次将自动完成明细及附件准备。'}
+              </span>
             </div>
           )}
 
@@ -374,7 +380,7 @@ function App() {
           <div className="dialog" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
             <button className="dialog-close" onClick={() => setConfirming(false)} title="关闭"><X size={17} /></button>
             <span className="dialog-icon"><Send size={22} /></span>
-            <h3>{allowValidationErrors && hasValidationErrors ? '确认带问题提交' : preview.ApprovalType === 'Project' ? '确认准备审批' : '确认发起付款审批'}</h3>
+            <h3>{allowValidationErrors && hasValidationErrors ? '确认带问题提交' : preview.ApprovalType === 'Cloud' ? '确认发起付款审批' : '确认准备审批'}</h3>
             <p>{preview.RecordCount} 条付款明细，合计 {money(preview.TotalAmount)}</p>
             {allowValidationErrors && hasValidationErrors && <div className="override-warning"><AlertCircle size={18} /><span>本批次存在 {preview.Errors.length} 项校验问题，仍将继续生成附件并提交审批。</span></div>}
             <dl>

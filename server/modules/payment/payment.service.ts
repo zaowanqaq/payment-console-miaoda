@@ -12,6 +12,8 @@ type BaseListResponse = {
   has_more: boolean;
 };
 
+type ApprovalType = 'Cloud' | 'Project' | 'Wallet';
+
 @Injectable()
 export class PaymentService {
   constructor(private readonly feishu: FeishuService, private readonly config: PaymentConfig) {}
@@ -57,9 +59,19 @@ export class PaymentService {
     });
   }
 
-  private resolveApprovalType(records: BaseRecord[]): 'Cloud' | 'Project' {
-    const methods = [...new Set(records.map(({ fields }) => this.text(fields['默认收款方式（自动带出）']) || this.text(fields['付款方式'])).filter(Boolean))];
-    return methods.length === 1 && methods[0] === '云账户' ? 'Cloud' : 'Project';
+  private normalized(value: unknown): string {
+    return (this.text(value) || '').trim().replace(/\s+/g, '').toLowerCase();
+  }
+
+  private paymentMethod(record: BaseRecord): string {
+    return this.text(record.fields['默认收款方式（自动带出）']) || this.text(record.fields['付款方式']) || '';
+  }
+
+  private resolveApprovalType(records: BaseRecord[]): ApprovalType {
+    const methods = [...new Set(records.map((record) => this.paymentMethod(record)).filter(Boolean))];
+    if (methods.length === 1 && ['云账户', '云账户支付'].includes(methods[0])) return 'Cloud';
+    if (methods.length === 1 && ['小荷包', '小荷包支付'].includes(methods[0])) return 'Wallet';
+    return 'Project';
   }
 
   private recordErrors(record: BaseRecord): string[] {
@@ -72,32 +84,122 @@ export class PaymentService {
     if (!this.attachmentEntries(record.fields['验收/凭证附件']).length) errors.push(`${name}：缺少验收/凭证附件。`);
     const cost = this.number(record.fields['实际成本']);
     if (cost == null || cost <= 0) errors.push(`${name}：实际成本必须大于 0。`);
+    const linkageError = this.text(record.fields['校验错误']);
+    if (linkageError) errors.push(...linkageError.split('\n').filter(Boolean));
     return errors;
   }
 
-  private validate(records: BaseRecord[], approvalType: 'Cloud' | 'Project'): string[] {
+  private validate(records: BaseRecord[], approvalType: ApprovalType): string[] {
     if (!records.length) return ['未勾选任何付款明细。'];
     const errors: string[] = [];
-    const resourceIds = [...new Set(records.flatMap(({ fields }) => this.linkIds(fields['关联资源'])))];
-    if (resourceIds.length !== 1) errors.push('批量付款必须关联同一个资源。');
+    const approvalTypes = [...new Set(records.map((record) => this.resolveApprovalType([record])))];
+    if (approvalTypes.length !== 1) errors.push('不同付款方式不能混合提审。');
     if (approvalType === 'Project') {
-      const projectIds = [...new Set(records.flatMap(({ fields }) => this.linkIds(fields['关联项目'])))];
-      if (projectIds.length !== 1) errors.push('项目费用付款必须关联同一个项目。');
+      const payeeKeys = [...new Set(records.map((record) => [
+        this.normalized(record.fields['收款人（自动带出）']),
+        this.normalized(record.fields['资源账号（自动带出）']),
+      ].join('|')))];
+      if (payeeKeys.length !== 1) errors.push('普通付款必须按同一收款账户分批。');
+    }
+    if (approvalType === 'Wallet') {
+      const resourceIds = [...new Set(records.flatMap(({ fields }) => this.linkIds(fields['关联资源'])))];
+      if (resourceIds.length !== 1) errors.push('小荷包付款一个二维码只能对应一个批次。');
     }
     errors.push(...records.flatMap((record) => this.recordErrors(record)));
     return [...new Set(errors)];
   }
 
-  private async listRecords(token: string, filter: Record<string, unknown>): Promise<BaseRecord[]> {
-    const query = new URLSearchParams({ filter: JSON.stringify(filter), limit: '200', offset: '0' });
+  private async listTableRecords(token: string, tableId: string, filter?: Record<string, unknown>): Promise<BaseRecord[]> {
+    const query = new URLSearchParams({ limit: '500', offset: '0' });
+    if (filter) query.set('filter', JSON.stringify(filter));
     const payload = await this.feishu.api<BaseListResponse>(
-      `base/v3/bases/${this.config.baseToken}/tables/${this.config.paymentTableId}/records?${query}`,
+      `base/v3/bases/${this.config.baseToken}/tables/${tableId}/records?${query}`,
       token,
     );
     return payload.record_id_list.map((recordId, row) => ({
       recordId,
       fields: Object.fromEntries(payload.fields.map((field, column) => [field, payload.data[row]?.[column]])),
     }));
+  }
+
+  private listRecords(token: string, filter: Record<string, unknown>): Promise<BaseRecord[]> {
+    return this.listTableRecords(token, this.config.paymentTableId, filter);
+  }
+
+  private approved(records: BaseRecord[]): BaseRecord[] {
+    return records.filter((record) => this.hasOption(record.fields['申请状态'], ['已通过']));
+  }
+
+  private async resolveLinkages(token: string, records: BaseRecord[]): Promise<BaseRecord[]> {
+    if (!records.length) return records;
+    const [projects, resources, closures] = await Promise.all([
+      this.listTableRecords(token, this.config.projectSyncTableId),
+      this.listTableRecords(token, this.config.resourceSyncTableId),
+      this.listTableRecords(token, this.config.closureSyncTableId),
+    ]);
+    const approvedProjects = this.approved(projects);
+    const approvedResources = this.approved(resources);
+    const approvedClosures = this.approved(closures);
+    const nowText = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai', dateStyle: 'short', timeStyle: 'medium' }).format(new Date());
+    const enriched: BaseRecord[] = [];
+
+    for (const record of records) {
+      const errors: string[] = [];
+      const projectCode = this.normalized(record.fields['项目编号（自动带出）']);
+      const projectName = this.normalized(record.fields['项目名称']);
+      const resourceAlias = this.normalized(record.fields['资源账号（自动带出）']) || this.normalized(record.fields['收款人（自动带出）']);
+      const approvalType = this.resolveApprovalType([record]);
+      const expectedResourcePayment = approvalType === 'Cloud' ? '云账户支付' : approvalType === 'Wallet' ? '小荷包支付' : '对公支付';
+      const projectMatches = approvedProjects.filter((project) => projectCode
+        ? this.normalized(project.fields['项目编号']) === projectCode
+        : projectName && this.normalized(project.fields['项目名称']) === projectName);
+      const resourceMatches = approvedResources.filter((resource) =>
+        resourceAlias
+        && this.normalized(resource.fields['资源代称']) === resourceAlias
+        && this.text(resource.fields['资源支付形式']) === expectedResourcePayment,
+      );
+
+      if (!projectCode && !projectName) errors.push('缺少项目编号或项目名称，无法关联立项审批。');
+      else if (projectMatches.length === 0) errors.push('未找到已通过的立项审批。');
+      else if (projectMatches.length > 1) errors.push('匹配到多条已通过立项审批，请人工确认。');
+
+      if (!resourceAlias) errors.push('缺少资源代称/资源账号，无法关联资源入库审批。');
+      else if (resourceMatches.length === 0) errors.push(`未找到支付形式为“${expectedResourcePayment}”的已通过资源入库审批。`);
+      else if (resourceMatches.length > 1) errors.push('匹配到多条已通过资源入库审批，请人工确认。');
+
+      const closureMatches = approvedClosures.filter((closure) => projectCode
+        ? this.normalized(closure.fields['项目编号']) === projectCode
+        : projectName && this.normalized(closure.fields['项目名称']) === projectName);
+      if (closureMatches.length) errors.push('项目已有已通过的结项审批，新增付款需人工确认。');
+
+      const projectRecord = projectMatches.length === 1 ? projectMatches[0] : undefined;
+      const resourceRecord = resourceMatches.length === 1 ? resourceMatches[0] : undefined;
+      const closureRecord = closureMatches.length === 1 ? closureMatches[0] : undefined;
+      const sourceTimes = [projectRecord, resourceRecord, closureRecord]
+        .map((item) => this.text(item?.fields['完成时间']))
+        .filter((item): item is string => Boolean(item))
+        .sort();
+      const patch: Record<string, unknown> = {
+        '项目关联键': projectCode || projectName,
+        '资源关联键': `${projectCode || projectName}|${resourceAlias}|${expectedResourcePayment}`,
+        '校验状态': errors.length ? (errors.some((error) => error.includes('多条') || error.includes('人工确认')) ? '需人工确认' : '阻断') : '通过',
+        '校验错误': errors.join('\n') || null,
+        '最后校验时间': nowText,
+        '审批源最后更新时间': sourceTimes.at(-1) || nowText,
+      };
+      if (projectRecord) patch['关联项目'] = [{ id: projectRecord.recordId }];
+      if (resourceRecord) patch['关联资源'] = [{ id: resourceRecord.recordId }];
+      if (closureRecord) patch['关联项目结项'] = [{ id: closureRecord.recordId }];
+      try {
+        await this.updateRecords(token, [record.recordId], patch);
+      } catch (error) {
+        errors.push(`关联回写失败：${error instanceof Error ? error.message : String(error)}`);
+        patch['校验状态'] = '阻断';
+        patch['校验错误'] = errors.join('\n');
+      }
+      enriched.push({ recordId: record.recordId, fields: { ...record.fields, ...patch } });
+    }
+    return enriched;
   }
 
   private selectedFilter() {
@@ -109,7 +211,7 @@ export class PaymentService {
       throw new HttpException('请切换到【付款执行明细】后再使用插件', HttpStatus.BAD_REQUEST);
     }
     const token = await this.feishu.userToken(req, res) as string;
-    const records = await this.listRecords(token, this.selectedFilter());
+    const records = await this.resolveLinkages(token, await this.listRecords(token, this.selectedFilter()));
     const approvalType = this.resolveApprovalType(records);
     const errors = this.validate(records, approvalType);
     const items = records.map((record) => ({
@@ -125,12 +227,14 @@ export class PaymentService {
       ContractStatus: this.text(record.fields['合同/订单状态']),
       InvoiceStatus: this.text(record.fields['发票/凭证状态']),
       AttachmentCount: this.attachmentEntries(record.fields['验收/凭证附件']).length,
+      ProjectLinked: this.linkIds(record.fields['关联项目']).length === 1,
+      ResourceLinked: this.linkIds(record.fields['关联资源']).length === 1,
       Errors: this.recordErrors(record),
     }));
     return {
       Action: 'Preview',
       ApprovalType: approvalType,
-      DefinitionName: approvalType === 'Cloud' ? '云账户多收款人' : '项目费用付款',
+      DefinitionName: approvalType === 'Cloud' ? '云账户多人付款' : approvalType === 'Wallet' ? '小荷包付款' : '普通付款',
       RecordCount: records.length,
       TotalAmount: items.reduce((sum, item) => sum + (item.Cost || 0), 0),
       CanSubmit: records.length > 0 && errors.length === 0,
@@ -227,13 +331,33 @@ export class PaymentService {
     );
   }
 
+  private async discoverSyncedInstance(token: string, batchId: string, definitionName: string) {
+    const tableId = definitionName.includes('云账户')
+      ? this.config.cloudSyncTableId
+      : definitionName.includes('小荷包')
+        ? this.config.walletSyncTableId
+        : this.config.paymentSyncTableId;
+    const records = await this.listTableRecords(token, tableId);
+    const candidates = records.filter((record) => {
+      const reason = this.text(record.fields['付款事由']) || '';
+      return reason.includes(batchId);
+    });
+    if (candidates.length !== 1) return null;
+    const candidate = candidates[0];
+    return {
+      instanceCode: this.text(candidate.fields.SourceID),
+      approvalLink: this.text(candidate.fields['申请编号']),
+      approvalStatus: this.text(candidate.fields['申请状态']),
+    };
+  }
+
   async submit(req: Request, res: Response, input: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; confirmed?: boolean; allowValidationErrors?: boolean }) {
     if (input.confirmed !== true) throw new HttpException('提交前需要明确确认', HttpStatus.BAD_REQUEST);
     if (!input.reason?.trim()) throw new HttpException('付款事由不能为空', HttpStatus.BAD_REQUEST);
     if (!input.paymentEntity?.trim()) throw new HttpException('付款主体不能为空', HttpStatus.BAD_REQUEST);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.expectedPaymentDate || '')) throw new HttpException('期望付款日期格式不正确', HttpStatus.BAD_REQUEST);
     const token = await this.feishu.userToken(req, res) as string;
-    const records = await this.listRecords(token, this.selectedFilter());
+    const records = await this.resolveLinkages(token, await this.listRecords(token, this.selectedFilter()));
     const approvalType = this.resolveApprovalType(records);
     const errors = this.validate(records, approvalType);
     if (errors.length && input.allowValidationErrors !== true) throw new HttpException(errors.join('\n'), HttpStatus.BAD_REQUEST);
@@ -242,8 +366,12 @@ export class PaymentService {
     const recordIds = records.map((record) => record.recordId);
     const totalAmount = records.reduce((sum, record) => sum + (this.number(record.fields['实际成本']) || 0), 0);
     const reason = `${input.reason.trim()} [${batchId}]`;
-    const definitionName = approvalType === 'Cloud' ? '云账户多收款人' : '项目费用付款';
-    const approvalLink = approvalType === 'Cloud' ? this.config.cloudApprovalLink : this.config.projectApprovalLink;
+    const definitionName = approvalType === 'Cloud' ? '云账户多人付款' : approvalType === 'Wallet' ? '小荷包付款' : '普通付款';
+    const approvalLink = approvalType === 'Cloud'
+      ? this.config.cloudApprovalLink
+      : approvalType === 'Wallet'
+        ? this.config.walletApprovalLink
+        : this.config.projectApprovalLink;
     try {
       const attachments = await this.resolvedAttachments(token, records);
       const detailCode = await this.uploadApprovalFile(this.csv(records, batchId), `${batchId}-payment-details.csv`, 'text/csv');
@@ -263,16 +391,32 @@ export class PaymentService {
         '付款主体': input.paymentEntity.trim(),
         '期望付款日期': `${input.expectedPaymentDate} 00:00:00`,
         '付款审批链接': approvalLink,
+        '付款批次键': [
+          approvalType,
+          input.paymentEntity.trim(),
+          this.text(records[0]?.fields['资源账号（自动带出）']) || this.text(records[0]?.fields['收款人（自动带出）']),
+          input.expectedPaymentDate,
+        ].join('|'),
         '审批附件Codes': JSON.stringify({ detail: detailCode, evidence: evidenceCodes }),
         '审批附件上传时间': nowText,
         '提交失败原因': null,
         '申请付款选择框': false,
       });
 
-      if (approvalType === 'Project') {
+      if (approvalType !== 'Cloud' || !this.config.cloudAutoSubmitEnabled) {
+        const blocker = approvalType === 'Project'
+          ? `普通付款包含飞书 API 暂不支持的收款银行账户控件。附件已自动上传，请打开审批补选账户，并在付款事由中保留 [${batchId}] 后提交。`
+          : approvalType === 'Wallet'
+            ? '小荷包审批需要选择审批人并确认收款二维码。附件已准备，请打开原生审批完成提交。'
+            : `云账户审批当前未暴露可用控件 ID。为避免写入错误审批，已准备材料，请在付款事由中保留 [${batchId}] 并通过原生审批提交。`;
+        await this.updateRecords(token, recordIds, {
+          '付款进度': approvalType === 'Project' ? '待补充账户' : '待申请',
+          '批量提交状态': '待提单',
+          '提交失败原因': null,
+        });
         return {
           Action: 'Submit', BatchId: batchId, ApprovalType: approvalType, Submitted: false, ApprovalLink: approvalLink,
-          Blocker: '项目费用付款包含飞书 API 暂不支持的收款银行账户控件。附件已自动上传，请打开审批补选账户后提交。',
+          Blocker: blocker,
         };
       }
 
@@ -295,6 +439,7 @@ export class PaymentService {
         '付款流程编号': serialNumber,
         '付款审批链接': finalLink,
         '付款进度': '审批中',
+        '审批状态': 'PENDING',
         '批量提交状态': '已提交',
         '批次提交时间': nowText,
         '提交失败原因': null,
@@ -329,10 +474,21 @@ export class PaymentService {
     }
     const results: unknown[] = [];
     for (const [batchId, group] of groups) {
-      const instanceCode = [...new Set(group.map((record) => this.text(record.fields['审批实例Code'])).filter(Boolean))][0];
+      let instanceCode = [...new Set(group.map((record) => this.text(record.fields['审批实例Code'])).filter(Boolean))][0];
       if (!instanceCode) {
-        results.push({ BatchId: batchId, Result: '尚未回填审批实例 Code', Records: group.length });
-        continue;
+        const definitionName = this.text(group[0]?.fields['审批定义']) || '';
+        const discovered = await this.discoverSyncedInstance(token, batchId, definitionName);
+        if (discovered?.instanceCode) {
+          instanceCode = discovered.instanceCode;
+          await this.updateRecords(token, group.map((record) => record.recordId), {
+            '审批实例Code': instanceCode,
+            '付款审批链接': discovered.approvalLink || null,
+            '审批状态': discovered.approvalStatus || null,
+          });
+        } else {
+          results.push({ BatchId: batchId, Result: '同步表中尚未找到对应审批实例', Records: group.length });
+          continue;
+        }
       }
       const detail = await this.feishu.api<{ status: string; serial_number?: string }>(
         `approval/v4/instances/detail?${new URLSearchParams({ instance_code: instanceCode, locale: 'zh-CN' })}`, token,
@@ -342,8 +498,10 @@ export class PaymentService {
       await this.updateRecords(token, group.map((record) => record.recordId), {
         '付款流程编号': detail.serial_number || null,
         '付款进度': paymentStatus,
+        '审批状态': detail.status,
         '批量提交状态': '已回填',
         '审批回填时间': nowText,
+        '审批完成时间': ['APPROVED', 'REJECTED', 'CANCELED', 'DELETED'].includes(detail.status) ? nowText : null,
         '申请付款选择框': false,
         '提交失败原因': null,
       });

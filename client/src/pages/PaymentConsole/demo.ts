@@ -22,6 +22,8 @@ export const demoPreview: BatchPreview = {
       ContractStatus: '已签署',
       InvoiceStatus: '无需发票',
       AttachmentCount: 2,
+      ProjectLinked: true,
+      ResourceLinked: true,
       Errors: [],
     },
     {
@@ -37,6 +39,8 @@ export const demoPreview: BatchPreview = {
       ContractStatus: '已签署',
       InvoiceStatus: '无需发票',
       AttachmentCount: 3,
+      ProjectLinked: true,
+      ResourceLinked: true,
       Errors: [],
     },
     {
@@ -52,6 +56,8 @@ export const demoPreview: BatchPreview = {
       ContractStatus: '无需合同',
       InvoiceStatus: '已审核',
       AttachmentCount: 1,
+      ProjectLinked: true,
+      ResourceLinked: true,
       Errors: [],
     },
   ],

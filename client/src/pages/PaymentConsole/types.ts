@@ -11,12 +11,14 @@ export type BatchRecord = {
   ContractStatus: string | null
   InvoiceStatus: string | null
   AttachmentCount: number
+  ProjectLinked: boolean
+  ResourceLinked: boolean
   Errors: string[]
 }
 
 export type BatchPreview = {
   Action: 'Preview'
-  ApprovalType: 'Cloud' | 'Project'
+  ApprovalType: 'Cloud' | 'Project' | 'Wallet'
   DefinitionName: string
   RecordCount: number
   TotalAmount: number
@@ -37,7 +39,7 @@ export type CurrentUser = {
 export type SubmitResult = {
   Action: 'Submit'
   BatchId: string
-  ApprovalType: 'Cloud' | 'Project'
+  ApprovalType: 'Cloud' | 'Project' | 'Wallet'
   Submitted: boolean
   InstanceCode?: string
   InstanceLink?: string
