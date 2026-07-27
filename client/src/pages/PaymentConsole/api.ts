@@ -51,8 +51,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ...input, confirmed: true }),
     }),
-  sync: () => request<unknown>('/api/approvals/sync', {
-    method: 'POST',
-    body: JSON.stringify({ confirmed: true }),
-  }),
+  sync: () => new URLSearchParams(window.location.search).has('demo')
+    ? Promise.resolve({ ok: true })
+    : request<unknown>('/api/approvals/sync', {
+      method: 'POST',
+      body: JSON.stringify({ confirmed: true }),
+    }),
 }

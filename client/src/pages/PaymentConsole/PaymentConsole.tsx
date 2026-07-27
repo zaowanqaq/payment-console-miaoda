@@ -83,6 +83,9 @@ function App() {
         setPreview(null)
         return
       }
+      // Best-effort backfill: connector-synced native approvals and API-created
+      // approvals are reconciled whenever the console opens or refreshes.
+      await api.sync().catch(() => undefined)
       const nextPreview = await api.preview(context)
       setPreview(nextPreview)
       if (!reason && nextPreview.RecordCount > 0) {
