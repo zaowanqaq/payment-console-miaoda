@@ -456,14 +456,14 @@ export class PaymentService {
       ApprovalType: approvalType,
       ExecutionMode: 'Approval',
       DefinitionName: approvalType === 'Cloud'
-        ? '✳️【其他】供应商云账户付款【多收款人】'
+        ? '【测试】云账户批量付款资源（仅达人）'
         : approvalType === 'Wallet'
           ? '【测试】小荷包'
           : approvalType === 'Corporate'
             ? '【测试】付款'
             : '待识别付款审批',
       AutoSubmitEnabled: approvalType === 'Cloud'
-        ? Object.values(this.config.cloudWidgets).every(Boolean)
+        ? Boolean(this.config.cloudApprovalCode)
         : approvalType === 'Corporate'
           ? this.config.corporateAutoSubmitEnabled
           : Object.values(this.config.walletWidgets).every(Boolean),
@@ -642,7 +642,7 @@ export class PaymentService {
     const reason = `${input.reason.trim()} [${batchId}]`;
     if (approvalType === 'Unknown') throw new HttpException('付款形式无法从关联资源自动带出，请先关联资源入库审批。', HttpStatus.BAD_REQUEST);
     const definitionName = approvalType === 'Cloud'
-      ? '✳️【其他】供应商云账户付款【多收款人】'
+      ? '【测试】云账户批量付款资源（仅达人）'
       : approvalType === 'Wallet'
         ? '【测试】小荷包'
         : '【测试】付款';
@@ -686,7 +686,7 @@ export class PaymentService {
       });
 
       const autoSubmitEnabled = approvalType === 'Cloud'
-        ? Object.values(this.config.cloudWidgets).every(Boolean)
+        ? Boolean(this.config.cloudApprovalCode)
         : approvalType === 'Corporate'
           ? this.config.corporateAutoSubmitEnabled
           : Object.values(this.config.walletWidgets).every(Boolean);
@@ -709,14 +709,7 @@ export class PaymentService {
 
       let form: Array<Record<string, unknown>>;
       if (approvalType === 'Cloud') {
-        const widgets = this.config.cloudWidgets;
-        form = [
-          { id: widgets.reason, type: 'textarea', value: reason },
-          { id: widgets.detail, type: 'attachmentV2', value: [detailCode] },
-          { id: widgets.settlement, type: 'attachmentV2', value: evidenceCodes },
-          { id: widgets.amount, type: 'amount', value: totalAmount, currency: 'CNY' },
-          { id: widgets.date, type: 'date', value: `${input.expectedPaymentDate}T00:00:00+08:00` },
-        ];
+        form = [];
       } else if (approvalType === 'Wallet') {
         const widgets = this.config.walletWidgets;
         form = [

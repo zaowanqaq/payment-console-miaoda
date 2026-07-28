@@ -25,7 +25,7 @@ export class PaymentConfig {
   readonly walletSyncTableId = required('WALLET_SYNC_TABLE_ID');
   readonly corporateApprovalCode = required('PROJECT_APPROVAL_CODE');
   readonly walletApprovalCode = required('WALLET_APPROVAL_CODE');
-  readonly cloudApprovalCode = optional('CLOUD_APPROVAL_CODE') || '8263DAB0-B756-4E8B-B436-F1E582C8BE5F';
+  readonly cloudApprovalCode = optional('CLOUD_APPROVAL_CODE') || '2F29FCB6-ED2D-48AB-A064-C1C27FD4F988';
   readonly cloudWidgets = {
     reason: optional('CLOUD_WIDGET_REASON_ID') || 'widget17228709591510001',
     detail: optional('CLOUD_WIDGET_DETAIL_ATTACHMENT_ID') || 'widget17228697554950001',
