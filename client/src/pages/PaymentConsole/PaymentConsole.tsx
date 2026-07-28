@@ -23,8 +23,6 @@ import { resolveBaseContext, subscribeToActiveTableChanges, type BaseContext } f
 import type { BatchPreview, CurrentUser, SubmitResult } from './types'
 import './payment-console.css'
 
-const paymentEntities = ['游鸟科技', '游鸟文化', '新枝', '火勺', '回山', '悉多']
-
 function defaultPaymentDate() {
   const date = new Date()
   date.setDate(date.getDate() + 3)
@@ -63,9 +61,9 @@ function App() {
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [baseContext, setBaseContext] = useState<BaseContext>({ embedded: false })
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
   const [reason, setReason] = useState('')
-  const [paymentEntity, setPaymentEntity] = useState('游鸟科技')
   const [expectedPaymentDate, setExpectedPaymentDate] = useState(defaultPaymentDate)
   const [allowValidationErrors, setAllowValidationErrors] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -74,35 +72,48 @@ function App() {
   const [qrFile, setQrFile] = useState<File | null>(null)
   const [supportingFiles, setSupportingFiles] = useState<File[]>([])
   const captureRef = useRef<HTMLDivElement | null>(null)
+  const refreshPromiseRef = useRef<Promise<void> | null>(null)
+  const loadedOnceRef = useRef(false)
+  const submittingRef = useRef(false)
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
+  const refresh = useCallback((options: { sync?: boolean; showLoading?: boolean } = {}) => {
+    if (refreshPromiseRef.current) return refreshPromiseRef.current
+    const showLoading = options.showLoading ?? !loadedOnceRef.current
+    if (showLoading) setLoading(true)
+    else setRefreshing(true)
     setError('')
-    try {
-      const context = await resolveBaseContext()
-      const nextUser = await api.currentUser()
-      setUser(nextUser)
-      if (nextUser.authorized) setAuthorizationPending(false)
-      setBaseContext(context)
-      if (!nextUser.authorized) {
-        setPreview(null)
-        return
+    const request = (async () => {
+      try {
+        const context = await resolveBaseContext()
+        const nextUser = await api.currentUser()
+        setUser(nextUser)
+        if (nextUser.authorized) setAuthorizationPending(false)
+        setBaseContext(context)
+        if (!nextUser.authorized) {
+          setPreview(null)
+          return
+        }
+        if (options.sync) await api.sync().catch(() => undefined)
+        const nextPreview = await api.preview(context)
+        setPreview(nextPreview)
+        setReason((current) => {
+          if (current || nextPreview.RecordCount === 0) return current
+          const project = nextPreview.Records[0]?.ProjectName
+          return project ? `${project}付款` : '项目费用付款'
+        })
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : '读取付款明细失败')
+      } finally {
+        loadedOnceRef.current = true
+        if (showLoading) setLoading(false)
+        else setRefreshing(false)
       }
-      // Best-effort backfill: connector-synced native approvals and API-created
-      // approvals are reconciled whenever the console opens or refreshes.
-      await api.sync().catch(() => undefined)
-      const nextPreview = await api.preview(context)
-      setPreview(nextPreview)
-      if (!reason && nextPreview.RecordCount > 0) {
-        const project = nextPreview.Records[0]?.ProjectName
-        setReason(project ? `${project}付款` : '项目费用付款')
-      }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '读取付款明细失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [reason])
+    })()
+    refreshPromiseRef.current = request.finally(() => {
+      refreshPromiseRef.current = null
+    })
+    return refreshPromiseRef.current
+  }, [])
 
   useEffect(() => {
     if (isOAuthCallback) {
@@ -122,7 +133,7 @@ function App() {
         })
       return
     }
-    void refresh()
+    void refresh({ sync: true, showLoading: true })
   }, [])
 
   useEffect(() => {
@@ -130,7 +141,7 @@ function App() {
       const message = event.data as { type?: string; session?: string } | string
       if (event.origin === window.location.origin && typeof message === 'object' && message?.type === 'payment-oauth-complete' && message.session) {
         window.localStorage.setItem('payment_feishu_session', message.session)
-        void refresh()
+        void refresh({ sync: true })
       }
     }
     window.addEventListener('message', handleOAuth)
@@ -163,8 +174,9 @@ function App() {
     let unsubscribe: (() => void) | undefined
     let refreshTimer: number | undefined
     void subscribeToActiveTableChanges(() => {
+      if (submittingRef.current) return
       window.clearTimeout(refreshTimer)
-      refreshTimer = window.setTimeout(() => void refresh(), 350)
+      refreshTimer = window.setTimeout(() => void refresh(), 900)
     }).then((dispose) => {
       if (disposed) dispose()
       else unsubscribe = dispose
@@ -179,6 +191,7 @@ function App() {
   const submitLabel = '生成材料并发起审批'
   const hasValidationErrors = Boolean(preview?.Errors.length)
   const hasBlockingErrors = Boolean(preview?.BlockingErrors.length)
+  const paymentEntity = preview?.Records[0]?.PaymentEntity || ''
   const requiredQr = Boolean(preview?.RequiredUploads.some((upload) => upload.Key === 'qr' && upload.Required))
   const requiredSupporting = Boolean(preview?.RequiredUploads.some(
     (upload) => upload.Key === 'supporting' && upload.Required && !upload.SatisfiedByBase,
@@ -210,6 +223,7 @@ function App() {
 
   async function submit() {
     setSubmitting(true)
+    submittingRef.current = true
     setSubmitStage(1)
     const timer = window.setInterval(() => {
       setSubmitStage((stage) => Math.min(stage + 1, 4))
@@ -234,12 +248,13 @@ function App() {
       setResult(nextResult)
       setQrFile(null)
       setSupportingFiles([])
-      await refresh()
+      void refresh()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '提审失败')
     } finally {
       window.clearInterval(timer)
       setSubmitting(false)
+      submittingRef.current = false
     }
   }
 
@@ -266,8 +281,8 @@ function App() {
             <Link2 size={14} />
             {baseContext.embedded ? '已连接当前 Base' : '本地联调'}
           </div>
-          <button className="icon-button" onClick={() => void refresh()} disabled={loading} title="刷新">
-            <RefreshCw size={17} className={loading ? 'spin' : ''} />
+          <button className="icon-button" onClick={() => void refresh({ sync: true })} disabled={loading || refreshing} title="刷新">
+            <RefreshCw size={17} className={loading || refreshing ? 'spin' : ''} />
           </button>
           <div className="identity">
             <span className="avatar">{user?.name?.slice(0, 1) || '早'}</span>
@@ -401,9 +416,8 @@ function App() {
             </label>
             <label>
               <span>付款主体</span>
-              <select value={paymentEntity} onChange={(event) => setPaymentEntity(event.target.value)}>
-                {paymentEntities.map((entity) => <option key={entity}>{entity}</option>)}
-              </select>
+              <input value={paymentEntity} readOnly placeholder="由关联立项审批的承接主体自动带出" />
+              <small className="file-hint">来自关联立项审批，不需要重复选择</small>
             </label>
             <label>
               <span>期望付款日期</span>

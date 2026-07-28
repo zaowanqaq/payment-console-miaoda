@@ -3,6 +3,7 @@ export type BatchRecord = {
   Name: string
   ProjectName: string | null
   ProjectCode: string | null
+  PaymentEntity: string | null
   ResourceAccount: string | null
   Recipient: string | null
   PaymentMethod: string | null

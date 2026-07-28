@@ -109,6 +109,18 @@ export class PaymentService {
     return (this.text(value) || '').trim().replace(/\s+/g, '').toLowerCase();
   }
 
+  private fieldMatches(current: unknown, desired: unknown): boolean {
+    if (Array.isArray(desired) && desired.every((item) => item && typeof item === 'object' && 'id' in item)) {
+      return this.linkIds(current).sort().join('|') === this.linkIds(desired).sort().join('|');
+    }
+    if (desired == null || desired === '') return this.text(current) == null;
+    return this.text(current) === this.text(desired);
+  }
+
+  private needsPatch(record: BaseRecord, patch: Record<string, unknown>): boolean {
+    return Object.entries(patch).some(([field, value]) => !this.fieldMatches(record.fields[field], value));
+  }
+
   private paymentMethod(record: BaseRecord): string {
     return this.text(record.fields['付款形式']) || '';
   }
@@ -179,20 +191,6 @@ export class PaymentService {
       province: this.text(fields['开户省（插件解析）']),
       city: this.text(fields['开户市（插件解析）']),
       accountType: this.text(fields['账户类型（插件解析）']),
-    };
-  }
-
-  private resourceAccountPatch(account: ParsedResourceAccount): Record<string, unknown> {
-    return {
-      '收款户名（插件解析）': account.accountName,
-      '收款账号（插件解析）': account.accountNumber,
-      '开户银行（插件解析）': account.bankName,
-      '开户支行（插件解析）': account.bankBranch,
-      '开户省（插件解析）': account.province,
-      '开户市（插件解析）': account.city,
-      '账户类型（插件解析）': account.accountType,
-      '账户校验状态（插件解析）': account.status,
-      '账户审批实例Code（插件解析）': account.sourceInstanceCode,
     };
   }
 
@@ -317,6 +315,9 @@ export class PaymentService {
     const approvalTypes = [...new Set(records.map((record) => this.resolveApprovalType([record])))];
     if (approvalTypes.length !== 1) errors.push('不同付款方式不能混合提审。');
     if (approvalType === 'Unknown') errors.push('付款形式为空、未识别或同一批次包含多种付款形式。');
+    const paymentEntities = [...new Set(records.map((record) => this.text(record.fields['付款主体'])).filter(Boolean))];
+    if (!paymentEntities.length) errors.push('关联立项审批没有承接主体，无法自动带出付款主体。');
+    if (paymentEntities.length > 1) errors.push('不同付款主体不能混合提审，请按承接主体拆分批次。');
     if (approvalType === 'Corporate') {
       const payeeKeys = [...new Set(records.map((record) => [
         this.normalized(record.fields['收款户名（自动带出）'] || record.fields['收款账户（自动带出）']),
@@ -431,10 +432,18 @@ export class PaymentService {
     if (approvalType === 'Corporate') {
       for (const record of records) {
         const name = this.text(record.fields['付款明细名称']) || record.recordId;
-        const province = this.text(record.fields['开户省（自动带出）']);
-        const city = this.text(record.fields['开户市（自动带出）']);
-        if (!province || !city) {
-          errors.push(`${name}：开户省、开户市未从资源账户审批解析完整，必须先完成资源账户变更审批。`);
+        const accountFields = [
+          ['收款户名', '收款户名（自动带出）'],
+          ['银行账号', '收款账号（自动带出）'],
+          ['开户银行', '开户银行（自动带出）'],
+          ['开户支行', '开户支行（自动带出）'],
+          ['开户省', '开户省（自动带出）'],
+          ['开户市', '开户市（自动带出）'],
+          ['账户类型', '账户类型（自动带出）'],
+        ] as const;
+        const missing = accountFields.filter(([, field]) => !this.text(record.fields[field])).map(([label]) => label);
+        if (missing.length) {
+          errors.push(`${name}：资源入库审批缺少${missing.join('、')}，必须先完成资源账户变更审批。`);
         }
       }
     }
@@ -468,11 +477,25 @@ export class PaymentService {
           : name === '项目编号'
             ? this.text(records[0]?.fields['项目编号（自动带出）'])
             : name === '承接主体'
-              ? input?.paymentEntity
-              : null;
-        const shouldValidate = name === '项目名称' || name === '项目编号' || (name === '承接主体' && Boolean(input));
+              ? this.text(records[0]?.fields['付款主体'])
+              : name === '收款户名'
+                ? this.text(records[0]?.fields['收款户名（自动带出）'])
+                : name === '银行账号'
+                  ? this.text(records[0]?.fields['收款账号（自动带出）'])
+                  : name === '开户银行'
+                    ? this.text(records[0]?.fields['开户银行（自动带出）'])
+                    : name === '开户支行'
+                      ? this.text(records[0]?.fields['开户支行（自动带出）'])
+                      : name === '开户省'
+                        ? this.text(records[0]?.fields['开户省（自动带出）'])
+                        : name === '开户市'
+                          ? this.text(records[0]?.fields['开户市（自动带出）'])
+                          : name === '账户类型'
+                            ? this.text(records[0]?.fields['账户类型（自动带出）'])
+                            : null;
+        const shouldValidate = ['项目名称', '项目编号', '承接主体', '收款户名', '银行账号', '开户银行', '开户支行', '开户省', '开户市', '账户类型'].includes(name);
         if (shouldValidate && !value?.trim()) {
-          errors.push(`审批必填项“${name}”不能为空，请补充付款执行明细或提交设置。`);
+          errors.push(`审批必填项“${name}”不能为空，请先补全关联的立项或资源入库审批。`);
         }
       } else if (control.type === 'image' || control.type === 'imageV2') {
         // 图片由员工在付款提审台临时上传，预检阶段只返回动态上传项。
@@ -485,9 +508,7 @@ export class PaymentService {
       } else if (control.type === 'radioV2' && approvalType === 'Corporate' && !this.config.corporatePaymentMethodValue) {
         errors.push(`审批必填项“${name}”未配置，请联系插件管理员设置付款方式。`);
       } else if (control.type === 'account') {
-        if (approvalType !== 'Corporate') {
-          errors.push(`审批必填项“${name}”暂不支持通过飞书接口自动填写。`);
-        }
+        errors.push(`审批必填项“${name}”是 API 不支持写入的原生收款账户控件，请审批管理员改成普通文本字段。`);
       } else if (control.type === 'connect') {
         errors.push(`审批必填项“${name}”尚未配置自动关联，请审批管理员将其改为非必填或移除。`);
       }
@@ -504,7 +525,7 @@ export class PaymentService {
     const empty = (value: unknown): boolean => value == null
       || value === ''
       || (Array.isArray(value) && value.length === 0);
-    for (const control of this.definitionControls(definition).filter((item) => item.required && item.visible !== false && item.type !== 'account')) {
+    for (const control of this.definitionControls(definition).filter((item) => item.required && item.visible !== false)) {
       const item = submitted.get(control.id);
       const value = control.type === 'contact' ? item?.open_ids : item?.value;
       if (!item || empty(value) || (control.type === 'amount' && Number(value) <= 0)) {
@@ -608,9 +629,6 @@ export class PaymentService {
           resourceAccount = await this.resolveResourceAccount(token, resourceRecord);
           accountCache.set(resourceRecord.recordId, resourceAccount);
         }
-        if (resourceAccount) {
-          await this.updateTableRecords(token, this.config.resourceSyncTableId, [resourceRecord.recordId], this.resourceAccountPatch(resourceAccount)).catch(() => undefined);
-        }
       }
 
       if (projectIds.length !== 1) errors.push('请先关联一条立项审批。');
@@ -626,6 +644,7 @@ export class PaymentService {
       const resourceAlias = this.normalized(resourceRecord?.fields['资源代称']);
       const expectedResourcePayment = this.text(resourceRecord?.fields['资源支付形式']) || '';
       const projectInitiatorId = this.userIds(projectRecord?.fields['发起人'])[0] || null;
+      const paymentEntity = this.text(projectRecord?.fields['承接主体']);
       const effectiveFields = {
         ...record.fields,
         '项目编号（自动带出）': projectRecord?.fields['项目编号'] ?? record.fields['项目编号（自动带出）'],
@@ -635,6 +654,7 @@ export class PaymentService {
         '资源支付形式（自动带出）': resourceRecord?.fields['资源支付形式'] ?? record.fields['资源支付形式（自动带出）'],
         '收款账户（自动带出）': resourceRecord?.fields['收款账户'],
         '银行卡号（自动带出）': resourceRecord?.fields['银行卡号'],
+        '付款主体': paymentEntity,
         '付款联系人OpenId（自动带出）': projectInitiatorId,
         ...this.paymentAccountPatch(resourceAccount),
       };
@@ -649,22 +669,27 @@ export class PaymentService {
         .map((item) => this.text(item?.fields['完成时间']))
         .filter((item): item is string => Boolean(item))
         .sort();
-      const patch: Record<string, unknown> = {
+      const semanticPatch: Record<string, unknown> = {
         '校验状态': errors.length ? (errors.some((error) => error.includes('人工确认')) ? '需人工确认' : '阻断') : '通过',
         '校验错误': errors.join('\n') || null,
-        '最后校验时间': nowText,
-        '审批源最后更新时间': sourceTimes.at(-1) || nowText,
+        '付款主体': paymentEntity,
         ...this.paymentAccountPatch(resourceAccount),
       };
-      if (closureRecord) patch['关联项目结项'] = [{ id: closureRecord.recordId }];
-      try {
-        await this.updateRecords(token, [record.recordId], patch);
-      } catch (error) {
-        errors.push(this.friendlyDataError(error));
-        patch['校验状态'] = '阻断';
-        patch['校验错误'] = errors.join('\n');
+      if (closureRecord) semanticPatch['关联项目结项'] = [{ id: closureRecord.recordId }];
+      if (this.needsPatch(record, semanticPatch)) {
+        try {
+          await this.updateRecords(token, [record.recordId], {
+            ...semanticPatch,
+            '最后校验时间': nowText,
+            '审批源最后更新时间': sourceTimes.at(-1) || nowText,
+          });
+        } catch (error) {
+          errors.push(this.friendlyDataError(error));
+          semanticPatch['校验状态'] = '阻断';
+          semanticPatch['校验错误'] = errors.join('\n');
+        }
       }
-      enriched.push({ recordId: record.recordId, fields: { ...effectiveFields, ...patch } });
+      enriched.push({ recordId: record.recordId, fields: { ...effectiveFields, ...semanticPatch } });
     }
     return enriched;
   }
@@ -688,6 +713,7 @@ export class PaymentService {
       Name: this.text(record.fields['付款明细名称']) || record.recordId,
       ProjectName: this.text(record.fields['项目名称']),
       ProjectCode: this.text(record.fields['项目编号（自动带出）']),
+      PaymentEntity: this.text(record.fields['付款主体']),
       ResourceAccount: this.text(record.fields['资源账号（自动带出）']),
       Recipient: this.text(record.fields['收款人（自动带出）']),
       PaymentMethod: this.text(record.fields['付款形式']),
@@ -827,20 +853,16 @@ export class PaymentService {
   }
 
   private async approvalSerialNumber(token: string, instanceCode: string): Promise<string | null> {
-    const delays = [0, 400, 800, 1600];
-    for (const delay of delays) {
-      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-      try {
-        const detail = await this.feishu.api<{ serial_number?: string }>(
-          `approval/v4/instances/detail?${new URLSearchParams({ instance_code: instanceCode, locale: 'zh-CN' })}`,
-          token,
-        );
-        if (detail.serial_number) return detail.serial_number;
-      } catch {
-        // 流水编号回填是补充信息，不能反向导致已经创建成功的审批被标记为失败。
-      }
+    try {
+      const detail = await this.feishu.api<{ serial_number?: string }>(
+        `approval/v4/instances/detail?${new URLSearchParams({ instance_code: instanceCode, locale: 'zh-CN' })}`,
+        token,
+      );
+      return detail.serial_number || null;
+    } catch {
+      // 流水编号回填是补充信息，后续同步会再次读取。
+      return null;
     }
-    return null;
   }
 
   private async updateTableRecords(token: string, tableId: string, recordIds: string[], patch: Record<string, unknown>): Promise<void> {
@@ -912,7 +934,6 @@ export class PaymentService {
   ) {
     if (input.confirmed !== true) throw new HttpException('提交前需要明确确认', HttpStatus.BAD_REQUEST);
     if (!input.reason?.trim()) throw new HttpException('付款事由不能为空', HttpStatus.BAD_REQUEST);
-    if (!input.paymentEntity?.trim()) throw new HttpException('付款主体不能为空', HttpStatus.BAD_REQUEST);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.expectedPaymentDate || '')) throw new HttpException('期望付款日期格式不正确', HttpStatus.BAD_REQUEST);
     const token = await this.feishu.userToken(req, res) as string;
     const records = await this.resolveLinkages(token, await this.listRecords(token, this.selectedFilter()));
@@ -944,6 +965,8 @@ export class PaymentService {
     const batchId = this.batchId();
     const recordIds = records.map((record) => record.recordId);
     const totalAmount = records.reduce((sum, record) => sum + (this.number(record.fields['实际成本']) || 0), 0);
+    const paymentEntity = this.text(records[0]?.fields['付款主体']);
+    if (!paymentEntity) throw new HttpException('关联立项审批没有承接主体，无法自动带出付款主体。', HttpStatus.BAD_REQUEST);
     const reason = `${input.reason.trim()} [${batchId}]`;
     if (approvalType === 'Unknown') throw new HttpException('付款形式无法从关联资源自动带出，请先关联资源入库审批。', HttpStatus.BAD_REQUEST);
     const definitionName = this.expectedDefinitionName(approvalType);
@@ -955,36 +978,36 @@ export class PaymentService {
     try {
       const nowText = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai', dateStyle: 'short', timeStyle: 'medium' }).format(new Date());
 
-      const screenshotCode = await this.uploadApprovalFile(
-        screenshotFile!.buffer,
-        `${batchId}-付款执行明细.png`,
-        screenshotFile!.mimetype || 'image/png',
-      );
-      const csvCode = await this.uploadApprovalFile(this.csv(records, batchId), `${batchId}-payment-details.csv`, 'text/csv');
+      const [screenshotCode, csvCode] = await Promise.all([
+        this.uploadApprovalFile(
+          screenshotFile!.buffer,
+          `${batchId}-付款执行明细.png`,
+          screenshotFile!.mimetype || 'image/png',
+        ),
+        this.uploadApprovalFile(this.csv(records, batchId), `${batchId}-payment-details.csv`, 'text/csv'),
+      ]);
       const detailCodes = [screenshotCode, csvCode];
-      const evidenceCodes: string[] = [];
       const attachments = this.requiredUploads(records, definition).some((upload) => upload.Key === 'supporting')
         ? await this.resolvedAttachments(token, records)
         : [];
-      for (const attachment of attachments) {
-        const query = new URLSearchParams();
-        if (attachment.extraInfo) query.set('extra', attachment.extraInfo);
-        const downloaded = await this.feishu.download(`drive/v1/medias/${attachment.fileToken}/download?${query}`, token);
-        evidenceCodes.push(await this.uploadApprovalFile(downloaded.buffer, attachment.name, downloaded.contentType));
-      }
-      for (const file of supportingFiles) {
-        evidenceCodes.push(await this.uploadApprovalFile(file.buffer, file.originalname, file.mimetype));
-      }
-      const qrCodes: string[] = [];
-      if (qrFile) {
-        qrCodes.push(await this.uploadApprovalFile(qrFile.buffer, qrFile.originalname, qrFile.mimetype, 'image'));
-      }
+      const [resolvedEvidenceCodes, uploadedEvidenceCodes, qrCode] = await Promise.all([
+        Promise.all(attachments.map(async (attachment) => {
+          const query = new URLSearchParams();
+          if (attachment.extraInfo) query.set('extra', attachment.extraInfo);
+          const downloaded = await this.feishu.download(`drive/v1/medias/${attachment.fileToken}/download?${query}`, token);
+          return this.uploadApprovalFile(downloaded.buffer, attachment.name, downloaded.contentType);
+        })),
+        Promise.all(supportingFiles.map((file) => this.uploadApprovalFile(file.buffer, file.originalname, file.mimetype))),
+        qrFile ? this.uploadApprovalFile(qrFile.buffer, qrFile.originalname, qrFile.mimetype, 'image') : Promise.resolve(null),
+      ]);
+      const evidenceCodes = [...resolvedEvidenceCodes, ...uploadedEvidenceCodes];
+      const qrCodes = qrCode ? [qrCode] : [];
       await this.updateRecords(token, recordIds, {
         '付款批次号': batchId,
         '批量提交状态': '待提单',
         '审批定义': definitionName,
         '付款事由': reason,
-        '付款主体': input.paymentEntity.trim(),
+        '付款主体': paymentEntity,
         '期望付款日期': `${input.expectedPaymentDate} 00:00:00`,
         '付款审批链接': approvalLink,
         '审批附件Codes': JSON.stringify({ detail: detailCodes, evidence: evidenceCodes, qr: qrCodes }),
@@ -1002,7 +1025,7 @@ export class PaymentService {
           { id: widgets.department, type: 'department', value: [{ open_id: this.config.walletDepartmentOpenId }] },
           { id: widgets.projectName, type: 'input', value: projectName || '' },
           { id: widgets.projectCode, type: 'input', value: projectCode || '' },
-          { id: widgets.entity, type: 'input', value: input.paymentEntity.trim() },
+          { id: widgets.entity, type: 'input', value: paymentEntity },
           { id: widgets.reason, type: 'textarea', value: reason },
           { id: widgets.detail, type: 'attachmentV2', value: detailCodes },
           { id: widgets.amount, type: 'amount', value: Math.round(totalAmount * 1.0665 * 100) / 100, currency: 'CNY' },
@@ -1029,6 +1052,13 @@ export class PaymentService {
           { id: widgets.amount, type: 'amount', value: totalAmount, currency: 'CNY' },
           { id: widgets.method, type: 'radioV2', value: this.config.corporatePaymentMethodValue },
           { id: widgets.date, type: 'date', value: `${input.expectedPaymentDate}T00:00:00+08:00` },
+          { id: widgets.accountName, type: 'input', value: this.text(records[0]?.fields['收款户名（自动带出）']) || '' },
+          { id: widgets.accountNumber, type: 'input', value: this.text(records[0]?.fields['收款账号（自动带出）']) || '' },
+          { id: widgets.bankName, type: 'input', value: this.text(records[0]?.fields['开户银行（自动带出）']) || '' },
+          { id: widgets.bankBranch, type: 'input', value: this.text(records[0]?.fields['开户支行（自动带出）']) || '' },
+          { id: widgets.province, type: 'input', value: this.text(records[0]?.fields['开户省（自动带出）']) || '' },
+          { id: widgets.city, type: 'input', value: this.text(records[0]?.fields['开户市（自动带出）']) || '' },
+          { id: widgets.accountType, type: 'input', value: this.text(records[0]?.fields['账户类型（自动带出）']) || '' },
         ];
         if (widgets.evidence && evidenceCodes.length) {
           form.splice(2, 0, { id: widgets.evidence, type: 'attachmentV2', value: evidenceCodes });
@@ -1094,12 +1124,16 @@ export class PaymentService {
         const discovered = await this.discoverSyncedInstance(token, batchId, definitionName);
         if (discovered?.instanceCode) {
           instanceCode = discovered.instanceCode;
-          await this.updateRecords(token, group.map((record) => record.recordId), {
+          const discoveryPatch = {
             '审批实例Code': instanceCode,
             '付款审批链接': discovered.approvalLink || null,
             '审批状态': discovered.approvalStatus || null,
             [discovered.linkField]: [{ id: discovered.recordId }],
-          });
+          };
+          const recordsToUpdate = group.filter((record) => this.needsPatch(record, discoveryPatch));
+          if (recordsToUpdate.length) {
+            await this.updateRecords(token, recordsToUpdate.map((record) => record.recordId), discoveryPatch);
+          }
         } else {
           results.push({ BatchId: batchId, Result: '同步表中尚未找到对应审批实例', Records: group.length });
           continue;
@@ -1110,16 +1144,23 @@ export class PaymentService {
       );
       const paymentStatus = detail.status === 'APPROVED' ? '待付款' : ['REJECTED', 'CANCELED', 'DELETED'].includes(detail.status) ? '已驳回' : '审批中';
       const nowText = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai', dateStyle: 'short', timeStyle: 'medium' }).format(new Date());
-      await this.updateRecords(token, group.map((record) => record.recordId), {
+      const terminal = ['APPROVED', 'REJECTED', 'CANCELED', 'DELETED'].includes(detail.status);
+      const syncPatch: Record<string, unknown> = {
         '付款流程编号': detail.serial_number || null,
         '付款进度': paymentStatus,
         '审批状态': detail.status,
         '批量提交状态': '已回填',
-        '审批回填时间': nowText,
-        '审批完成时间': ['APPROVED', 'REJECTED', 'CANCELED', 'DELETED'].includes(detail.status) ? nowText : null,
         '申请付款选择框': false,
         '提交失败原因': null,
-      });
+      };
+      const recordsToUpdate = group.filter((record) => this.needsPatch(record, syncPatch));
+      if (recordsToUpdate.length) {
+        await this.updateRecords(token, recordsToUpdate.map((record) => record.recordId), {
+          ...syncPatch,
+          '审批回填时间': nowText,
+          '审批完成时间': terminal ? nowText : null,
+        });
+      }
       results.push({ BatchId: batchId, Result: '已回填', InstanceCode: instanceCode, SerialNumber: detail.serial_number, ApprovalStatus: detail.status, PaymentStatus: paymentStatus, Records: group.length });
     }
     return results;

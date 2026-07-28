@@ -61,6 +61,13 @@ export class PaymentConfig {
     method: optional('PROJECT_WIDGET_METHOD_ID') || 'widget16510492719570001',
     date: optional('PROJECT_WIDGET_DATE_ID') || 'widget16510493109960001',
     contract: optional('PROJECT_WIDGET_CONTRACT_ID') || 'widget17848851037140001',
+    accountName: optional('PROJECT_WIDGET_ACCOUNT_NAME_ID') || 'widget17852298142770001',
+    accountNumber: optional('PROJECT_WIDGET_ACCOUNT_NUMBER_ID') || 'widget17852298443410001',
+    bankName: optional('PROJECT_WIDGET_BANK_NAME_ID') || 'widget17852298448880001',
+    bankBranch: optional('PROJECT_WIDGET_BANK_BRANCH_ID') || 'widget17852298454220001',
+    province: optional('PROJECT_WIDGET_PROVINCE_ID') || 'widget17852298459550001',
+    city: optional('PROJECT_WIDGET_CITY_ID') || 'widget17852298464780001',
+    accountType: optional('PROJECT_WIDGET_ACCOUNT_TYPE_ID') || 'widget17852298469950001',
   };
   readonly corporatePaymentMethodValue = optional('PROJECT_PAYMENT_METHOD_VALUE') || 'l2hc3vl4-s5t1j9v91vr-1';
   readonly oauthRedirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI?.trim();
