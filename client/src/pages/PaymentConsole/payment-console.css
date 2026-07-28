@@ -116,6 +116,8 @@ button { cursor: pointer; }
 .form-stack textarea { padding: 10px 11px; resize: vertical; min-height: 76px; line-height: 19px; }
 .form-stack input, .form-stack select { height: 38px; padding: 0 10px; }
 .form-stack textarea:focus, .form-stack input:focus, .form-stack select:focus { border-color: #5b9079; box-shadow: 0 0 0 3px rgba(23, 100, 72, 0.09); background: white; }
+.form-stack input[type='file'] { height: auto; min-height: 42px; padding: 8px; font-size: 11px; }
+.file-hint { color: var(--green); font-size: 10px; line-height: 15px; }
 .submit-footer { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); }
 .initiator-line { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; margin-bottom: 11px; }
 .initiator-line strong { margin-left: auto; color: var(--ink); }
@@ -159,6 +161,82 @@ button { cursor: pointer; }
 .progress-dock span { color: #afbbb5; font-size: 10px; }
 .progress-track { grid-column: 1 / -1; height: 3px; margin-top: 8px; overflow: hidden; background: #39453f; border-radius: 2px; }
 .progress-track span { display: block; height: 100%; background: #60c397; transition: width 0.5s ease; }
+
+.capture-stage {
+  position: fixed;
+  left: -20000px;
+  top: 0;
+  width: 1800px;
+  pointer-events: none;
+}
+.capture-sheet {
+  width: 1760px;
+  padding: 42px;
+  color: #17201c;
+  background: #fff;
+  font-family: 'MiSans', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+.capture-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 36px;
+  padding-bottom: 26px;
+  border-bottom: 3px solid #176448;
+}
+.capture-header > div:first-child span { color: #176448; font-size: 18px; font-weight: 700; }
+.capture-header h2 { margin: 7px 0 3px; font-size: 34px; line-height: 42px; }
+.capture-header p { margin: 0; color: #526059; font-size: 17px; }
+.capture-summary {
+  width: 980px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.capture-summary div {
+  min-height: 66px;
+  padding: 11px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: #f3f7f5;
+  border: 1px solid #dce7e1;
+  border-radius: 6px;
+}
+.capture-summary span { color: #5d6c64; font-size: 13px; }
+.capture-summary strong { font-size: 17px; line-height: 23px; overflow-wrap: anywhere; }
+.capture-table {
+  width: 100%;
+  margin-top: 24px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+.capture-table th {
+  padding: 11px 8px;
+  color: #fff;
+  background: #176448;
+  border: 1px solid #0f553c;
+  text-align: left;
+  font-weight: 700;
+}
+.capture-table td {
+  padding: 12px 8px;
+  border: 1px solid #dce4df;
+  vertical-align: top;
+  line-height: 19px;
+  overflow-wrap: anywhere;
+}
+.capture-table tbody tr:nth-child(even) { background: #f7faf8; }
+.capture-table small { display: block; margin-top: 4px; color: #617068; font-size: 11px; line-height: 16px; }
+.capture-money { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.capture-footer {
+  margin-top: 17px;
+  display: flex;
+  justify-content: space-between;
+  color: #65736c;
+  font-size: 12px;
+}
 
 @media (max-width: 980px) {
   .workspace { grid-template-columns: 1fr; }

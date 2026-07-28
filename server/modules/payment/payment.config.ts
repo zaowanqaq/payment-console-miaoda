@@ -23,9 +23,12 @@ export class PaymentConfig {
   readonly paymentSyncTableId = required('PAYMENT_SYNC_TABLE_ID');
   readonly cloudSyncTableId = required('CLOUD_SYNC_TABLE_ID');
   readonly walletSyncTableId = required('WALLET_SYNC_TABLE_ID');
-  readonly corporateApprovalCode = required('PROJECT_APPROVAL_CODE');
-  readonly walletApprovalCode = required('WALLET_APPROVAL_CODE');
+  readonly corporateApprovalCode = optional('PROJECT_APPROVAL_CODE') || '209D8A1F-ABA3-4E0B-8110-D32A1DC1E0EE';
+  readonly walletApprovalCode = optional('WALLET_APPROVAL_CODE') || 'B371918A-58C5-469D-99DF-76FB02F9BCFA';
   readonly cloudApprovalCode = optional('CLOUD_APPROVAL_CODE') || '2F29FCB6-ED2D-48AB-A064-C1C27FD4F988';
+  readonly corporateApprovalName = optional('PROJECT_APPROVAL_NAME') || '【测试】付款';
+  readonly walletApprovalName = optional('WALLET_APPROVAL_NAME') || '【测试】小荷包';
+  readonly cloudApprovalName = optional('CLOUD_APPROVAL_NAME') || '【测试】云账户批量付款资源（仅达人）';
   readonly cloudWidgets = {
     department: optional('CLOUD_WIDGET_DEPARTMENT_ID') || 'widget17848852798030001',
     projectName: optional('CLOUD_WIDGET_PROJECT_NAME_ID') || 'widget17848852976180001',
@@ -60,23 +63,14 @@ export class PaymentConfig {
     contract: optional('PROJECT_WIDGET_CONTRACT_ID') || 'widget17848851037140001',
   };
   readonly corporatePaymentMethodValue = optional('PROJECT_PAYMENT_METHOD_VALUE') || 'l2hc3vl4-s5t1j9v91vr-1';
-  // account/contract 控件无法由审批实例 API 自动填充。只有流程管理员确认已将它们
-  // 改为非必填（或移除）后，普通付款才允许插件直接提审。
-  readonly corporateAccountControlRequired = optional('PROJECT_ACCOUNT_CONTROL_REQUIRED') !== 'false';
-  readonly corporateContractControlRequired = optional('PROJECT_CONTRACT_CONTROL_REQUIRED') !== 'false';
-  readonly corporateAutoSubmitEnabled = [
-    this.corporateWidgets.reason,
-    this.corporateWidgets.detail,
-    this.corporateWidgets.amount,
-    this.corporateWidgets.date,
-    this.corporateAccountControlRequired ? '' : 'account-control-removed',
-    this.corporateContractControlRequired ? '' : 'contract-control-removed',
-  ].every(Boolean);
   readonly oauthRedirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI?.trim();
   readonly clientBasePath = process.env.CLIENT_BASE_PATH?.trim().replace(/\/$/, '') || '';
-  readonly corporateApprovalLink = process.env.PROJECT_APPROVAL_LINK?.trim() || '';
-  readonly walletApprovalLink = process.env.WALLET_APPROVAL_LINK?.trim() || '';
-  readonly cloudApprovalLink = process.env.CLOUD_APPROVAL_LINK?.trim() || '';
+  readonly corporateApprovalLink = process.env.PROJECT_APPROVAL_LINK?.trim()
+    || 'https://applink.feishu.cn/client/mini_program/open?appId=cli_9cb844403dbb9108&mode=appCenter&path=pc%2Fpages%2Fcreate-form%2Findex%3Fid%3D7666023331958705354%26scene%3Ddefinition-share&relaunch=true';
+  readonly walletApprovalLink = process.env.WALLET_APPROVAL_LINK?.trim()
+    || 'https://applink.feishu.cn/client/mini_program/open?appId=cli_9cb844403dbb9108&mode=appCenter&path=pc%2Fpages%2Fcreate-form%2Findex%3Fid%3D7666024654347291827%26scene%3Ddefinition-share&relaunch=true';
+  readonly cloudApprovalLink = process.env.CLOUD_APPROVAL_LINK?.trim()
+    || 'https://applink.feishu.cn/client/mini_program/open?appId=cli_9cb844403dbb9108&mode=appCenter&path=pc%2Fpages%2Fcreate-form%2Findex%3Fid%3D7666024249366170920%26scene%3Ddefinition-share&relaunch=true';
   readonly oauthScopes = [
     'auth:user.id:read',
     'offline_access',

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import html2canvas from 'html2canvas'
 import {
   AlertCircle,
   ArrowUpRight,
@@ -66,11 +67,13 @@ function App() {
   const [reason, setReason] = useState('')
   const [paymentEntity, setPaymentEntity] = useState('游鸟科技')
   const [expectedPaymentDate, setExpectedPaymentDate] = useState(defaultPaymentDate)
-  const [confirming, setConfirming] = useState(false)
   const [allowValidationErrors, setAllowValidationErrors] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitStage, setSubmitStage] = useState(0)
   const [result, setResult] = useState<SubmitResult | null>(null)
+  const [qrFile, setQrFile] = useState<File | null>(null)
+  const [supportingFiles, setSupportingFiles] = useState<File[]>([])
+  const captureRef = useRef<HTMLDivElement | null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -173,16 +176,25 @@ function App() {
     }
   }, [isOAuthCallback, refresh])
 
-  const submitLabel = preview?.AutoSubmitEnabled
-      ? '确认发起审批'
-      : '准备审批附件'
+  const submitLabel = '生成材料并发起审批'
   const hasValidationErrors = Boolean(preview?.Errors.length)
   const hasBlockingErrors = Boolean(preview?.BlockingErrors.length)
-  const isReady = Boolean(preview?.RecordCount && !hasBlockingErrors && (preview.CanSubmit || allowValidationErrors) && reason.trim() && expectedPaymentDate && !submitting)
+  const requiredQr = Boolean(preview?.RequiredUploads.some((upload) => upload.Key === 'qr' && upload.Required))
+  const requiredSupporting = Boolean(preview?.RequiredUploads.some(
+    (upload) => upload.Key === 'supporting' && upload.Required && !upload.SatisfiedByBase,
+  ))
+  const uploadsReady = (!requiredQr || Boolean(qrFile)) && (!requiredSupporting || supportingFiles.length > 0)
+  const isReady = Boolean(preview?.RecordCount && !hasBlockingErrors && uploadsReady && (preview.CanSubmit || allowValidationErrors) && reason.trim() && expectedPaymentDate && !submitting)
   const rowErrorCount = useMemo(
     () => preview?.Records.filter((record) => record.Errors.length > 0).length ?? 0,
     [preview],
   )
+  const selectedRecordKey = preview?.Records.map((record) => record.RecordId).join('|') || ''
+
+  useEffect(() => {
+    setQrFile(null)
+    setSupportingFiles([])
+  }, [selectedRecordKey])
 
   if (isOAuthCallback) {
     return (
@@ -197,19 +209,31 @@ function App() {
   }
 
   async function submit() {
-    setConfirming(false)
     setSubmitting(true)
     setSubmitStage(1)
     const timer = window.setInterval(() => {
       setSubmitStage((stage) => Math.min(stage + 1, 4))
     }, 1200)
     try {
-      const nextResult = await api.submit({ reason, paymentEntity, expectedPaymentDate, allowValidationErrors })
+      if (!captureRef.current) throw new Error('付款执行明细截图区域尚未准备好，请刷新后重试')
+      const canvas = await html2canvas(captureRef.current, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      })
+      const screenshotBlob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('付款执行明细截图生成失败')), 'image/png')
+      })
+      const screenshot = new File([screenshotBlob], '付款执行明细.png', { type: 'image/png' })
+      const nextResult = await api.submit(
+        { reason, paymentEntity, expectedPaymentDate, allowValidationErrors },
+        { detailScreenshot: screenshot, qrFile, supportingFiles },
+      )
       setSubmitStage(5)
       setResult(nextResult)
-      if (!nextResult.Submitted && nextResult.ApprovalLink) {
-        window.open(nextResult.ApprovalLink, '_blank', 'noopener,noreferrer')
-      }
+      setQrFile(null)
+      setSupportingFiles([])
       await refresh()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '提审失败')
@@ -366,13 +390,7 @@ function App() {
           {preview?.ExecutionMode === 'Approval' && !preview?.AutoSubmitEnabled && preview?.RecordCount > 0 && (
             <div className="account-notice">
               <ShieldCheck size={18} />
-              <span>
-                {preview.ApprovalType === 'Wallet'
-                  ? '小荷包审批控件配置不完整，请检查审批定义后重试。'
-                  : preview.ApprovalType === 'Cloud'
-                    ? '云账户审批控件配置不完整，请检查审批定义后重试。'
-                    : '普通付款审批流程仍含 API 无法自动填写的必填控件（银行账户/关联合同），需先改为非必填或移除。'}
-              </span>
+              <span>当前审批定义的 Code、名称或可自动填写控件尚未配置完整，请联系插件管理员检查。</span>
             </div>
           )}
 
@@ -391,6 +409,33 @@ function App() {
               <span>期望付款日期</span>
               <input type="date" value={expectedPaymentDate} onChange={(event) => setExpectedPaymentDate(event.target.value)} />
             </label>
+            {preview?.RequiredUploads.some((upload) => upload.Key === 'supporting') && (
+              <label>
+                <span>
+                  补充审批附件
+                  {preview.RequiredUploads.some((upload) => upload.Key === 'supporting' && upload.SatisfiedByBase)
+                    ? '（付款明细已有凭证，可选）'
+                    : '（必填）'}
+                </span>
+                <input
+                  type="file"
+                  multiple
+                  onChange={(event) => setSupportingFiles(Array.from(event.target.files || []))}
+                />
+                {supportingFiles.length > 0 && <small className="file-hint">已选择 {supportingFiles.length} 个文件</small>}
+              </label>
+            )}
+            {preview?.RequiredUploads.some((upload) => upload.Key === 'qr') && (
+              <label>
+                <span>收款二维码（必填）</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setQrFile(event.target.files?.[0] || null)}
+                />
+                {qrFile && <small className="file-hint">{qrFile.name}</small>}
+              </label>
+            )}
           </div>
 
           <div className="submit-footer">
@@ -409,7 +454,7 @@ function App() {
               >
                 <ShieldCheck size={18} />{authorizationPending ? '等待授权完成' : '授权飞书后继续'}<ChevronRight size={17} />
               </a>
-            ) : <button className={`primary-button ${allowValidationErrors && hasValidationErrors ? 'warning-button' : ''}`} disabled={!isReady} onClick={() => setConfirming(true)}>
+            ) : <button className={`primary-button ${allowValidationErrors && hasValidationErrors ? 'warning-button' : ''}`} disabled={!isReady} onClick={() => void submit()}>
               {submitting ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}
               {submitting ? '正在处理' : submitLabel}
               {!submitting && <ChevronRight size={17} />}
@@ -418,29 +463,71 @@ function App() {
         </aside>
       </main>
 
-      {confirming && preview && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setConfirming(false)}>
-          <div className="dialog" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
-            <button className="dialog-close" onClick={() => setConfirming(false)} title="关闭"><X size={17} /></button>
-            <span className="dialog-icon"><Send size={22} /></span>
-            <h3>
-              {allowValidationErrors && hasValidationErrors
-                ? '确认带问题提交'
-                : preview.AutoSubmitEnabled
-                    ? '确认发起付款审批'
-                    : '确认准备审批'}
-            </h3>
-            <p>{preview.RecordCount} 条付款明细，合计 {money(preview.TotalAmount)}</p>
-            {allowValidationErrors && hasValidationErrors && <div className="override-warning"><AlertCircle size={18} /><span>本批次存在 {preview.Errors.length} 项校验问题，仍将继续生成附件并提交审批。</span></div>}
-            <dl>
-              <div><dt>审批定义</dt><dd>{preview.DefinitionName}</dd></div>
-              <div><dt>发起人</dt><dd>{user?.name}</dd></div>
-              <div><dt>付款主体</dt><dd>{paymentEntity}</dd></div>
-              <div><dt>期望付款</dt><dd>{expectedPaymentDate}</dd></div>
-            </dl>
-            <div className="dialog-actions">
-              <button className="secondary-button" onClick={() => setConfirming(false)}>取消</button>
-              <button className="primary-button compact" onClick={() => void submit()}><Send size={17} />确认执行</button>
+      {preview && (
+        <div className="capture-stage" aria-hidden="true">
+          <div className="capture-sheet" ref={captureRef}>
+            <div className="capture-header">
+              <div>
+                <span>媒介项目费控</span>
+                <h2>付款执行明细</h2>
+                <p>{preview.DefinitionName}</p>
+              </div>
+              <div className="capture-summary">
+                <div><span>付款事由</span><strong>{reason || '—'}</strong></div>
+                <div><span>付款主体</span><strong>{paymentEntity}</strong></div>
+                <div><span>期望付款日期</span><strong>{expectedPaymentDate}</strong></div>
+                <div><span>记录数</span><strong>{preview.RecordCount}</strong></div>
+                <div><span>实际成本</span><strong>{money(preview.TotalAmount)}</strong></div>
+                <div>
+                  <span>{preview.ServiceFeeRate ? '审批金额（含6.65%）' : '审批金额'}</span>
+                  <strong>{money(preview.ApprovalAmount)}</strong>
+                </div>
+              </div>
+            </div>
+            <table className="capture-table">
+              <thead>
+                <tr>
+                  <th>项目编号</th>
+                  <th>项目名称</th>
+                  <th>付款明细</th>
+                  <th>资源账号 / 收款人</th>
+                  <th>平台 / 内容</th>
+                  <th>付款形式</th>
+                  <th>实际成本</th>
+                  <th>收款户名</th>
+                  <th>收款账号</th>
+                  <th>开户银行</th>
+                  <th>开户支行</th>
+                  <th>开户省</th>
+                  <th>开户市</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.Records.map((record) => (
+                  <tr key={record.RecordId}>
+                    <td>{record.ProjectCode || '—'}</td>
+                    <td>{record.ProjectName || '—'}</td>
+                    <td>{record.Name}</td>
+                    <td>{record.ResourceAccount || '—'}<small>{record.Recipient || '—'}</small></td>
+                    <td>
+                      {record.Platform || '—'}
+                      <small>{[record.Account, record.Topic, record.Link].filter(Boolean).join(' · ') || '—'}</small>
+                    </td>
+                    <td>{record.PaymentMethod || '—'}<small>{record.TaxRate ? `税点：${record.TaxRate}` : '—'}</small></td>
+                    <td className="capture-money">{money(record.Cost)}</td>
+                    <td>{record.PayeeAccountName || '—'}<small>{record.AccountType || '—'}</small></td>
+                    <td>{record.PayeeAccountNumber || '—'}</td>
+                    <td>{record.BankName || '—'}</td>
+                    <td>{record.BankBranch || '—'}</td>
+                    <td>{record.Province || '—'}</td>
+                    <td>{record.City || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="capture-footer">
+              <span>截图由付款提审台根据付款执行明细自动生成</span>
+              <span>{new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</span>
             </div>
           </div>
         </div>
@@ -449,7 +536,7 @@ function App() {
       {submitting && (
         <div className="progress-dock">
           <LoaderCircle className="spin" size={19} />
-          <div><strong>正在处理付款批次</strong><span>{['读取记录', '生成明细', '上传附件', '发起审批', '回填 Base'][Math.max(0, submitStage - 1)]}</span></div>
+          <div><strong>正在处理付款批次</strong><span>{['生成明细截图', '上传截图与附件', '组装审批表单', '发起审批', '回填 Base'][Math.max(0, submitStage - 1)]}</span></div>
           <div className="progress-track"><span style={{ width: `${Math.max(12, submitStage * 20)}%` }} /></div>
         </div>
       )}

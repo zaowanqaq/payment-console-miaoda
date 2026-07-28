@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 import { randomBytes } from 'node:crypto';
 import { FeishuService } from './feishu.service';
 import { PaymentConfig } from './payment.config';
-import type { AttachmentEntry, BaseRecord, BatchPreview } from './payment.types';
+import type { AttachmentEntry, BaseRecord, BatchPreview, RequiredUpload } from './payment.types';
 
 type BaseListResponse = {
   data: unknown[][];
@@ -26,6 +26,14 @@ type ApprovalDefinition = {
   approval_name?: string;
   form?: string | ApprovalControlDefinition[];
   node_list?: Array<{ name?: string; need_approver?: boolean }>;
+};
+
+type UploadedPaymentFile = {
+  fieldname: string;
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
 };
 
 type ParsedResourceAccount = {
@@ -267,6 +275,13 @@ export class PaymentService {
     return 'Unknown';
   }
 
+  private expectedDefinitionName(approvalType: ApprovalType): string {
+    if (approvalType === 'Cloud') return this.config.cloudApprovalName;
+    if (approvalType === 'Wallet') return this.config.walletApprovalName;
+    if (approvalType === 'Corporate') return this.config.corporateApprovalName;
+    return '待识别付款审批';
+  }
+
   private recordErrors(record: BaseRecord): string[] {
     const errors: string[] = [];
     const name = this.text(record.fields['付款明细名称']) || record.recordId;
@@ -285,9 +300,6 @@ export class PaymentService {
     if (!['对公支付', '小荷包支付', '云账户支付'].includes(selectedPayment)) errors.push(`${name}：请选择付款形式。`);
     if (sourcePayment && selectedPayment && sourcePayment !== selectedPayment) {
       errors.push(`${name}：人工选择的付款形式与资源入库审批不一致（资源审批为${sourcePayment}）。`);
-    }
-    if (selectedPayment === '小荷包支付' && !this.attachmentEntries(record.fields['收款二维码']).length) {
-      errors.push(`${name}：小荷包支付缺少收款二维码。`);
     }
     if (selectedPayment === '对公支付') {
       const accountStatus = this.text(record.fields['账户校验状态（自动带出）']);
@@ -329,6 +341,56 @@ export class PaymentService {
     return '';
   }
 
+  private expectedControlIds(approvalType: ApprovalType): Set<string> {
+    if (approvalType === 'Cloud') {
+      return new Set(Object.values(this.config.cloudWidgets).filter(Boolean));
+    }
+    if (approvalType === 'Wallet') {
+      const { detail, amount, qr } = this.config.walletWidgets;
+      return new Set([detail, amount, qr].filter(Boolean));
+    }
+    if (approvalType === 'Corporate') {
+      return new Set(Object.values(this.config.corporateWidgets).filter(Boolean));
+    }
+    return new Set();
+  }
+
+  private requiredUploads(
+    records: BaseRecord[],
+    definition: ApprovalDefinition | null,
+  ): RequiredUpload[] {
+    const detailControlIds = new Set([
+      this.config.cloudWidgets.detail,
+      this.config.walletWidgets.detail,
+      this.config.corporateWidgets.detail,
+    ]);
+    return this.definitionControls(definition)
+      .filter((control) => control.required && control.visible !== false)
+      .flatMap<RequiredUpload>((control) => {
+        if (control.type === 'image' || control.type === 'imageV2') {
+          return [{
+            Key: 'qr' as const,
+            ControlId: control.id,
+            Name: control.name || '图片',
+            Kind: 'image' as const,
+            Required: true,
+            SatisfiedByBase: false,
+          }];
+        }
+        if (control.type === 'attachmentV2' && !detailControlIds.has(control.id)) {
+          return [{
+            Key: 'supporting' as const,
+            ControlId: control.id,
+            Name: control.name || '补充附件',
+            Kind: 'attachment' as const,
+            Required: true,
+            SatisfiedByBase: records.some((record) => this.attachmentEntries(record.fields['验收/凭证附件']).length > 0),
+          }];
+        }
+        return [];
+      });
+  }
+
   private async approvalDefinition(token: string, approvalType: ApprovalType): Promise<ApprovalDefinition | null> {
     const approvalCode = this.approvalCode(approvalType);
     if (!approvalCode) return null;
@@ -360,9 +422,37 @@ export class PaymentService {
     input?: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string },
   ): string[] {
     const errors: string[] = [];
+    const expectedName = this.expectedDefinitionName(approvalType);
+    if (!definition?.approval_name) {
+      errors.push(`无法确认审批 Code 对应的完整名称，已阻止发起“${expectedName}”。`);
+    } else if (definition.approval_name !== expectedName) {
+      errors.push(`审批定义配置不匹配：当前 Code 对应“${definition.approval_name}”，预期为“${expectedName}”。`);
+    }
+    if (approvalType === 'Corporate') {
+      for (const record of records) {
+        const name = this.text(record.fields['付款明细名称']) || record.recordId;
+        const province = this.text(record.fields['开户省（自动带出）']);
+        const city = this.text(record.fields['开户市（自动带出）']);
+        if (!province || !city) {
+          errors.push(`${name}：开户省、开户市未从资源账户审批解析完整，必须先完成资源账户变更审批。`);
+        }
+      }
+    }
     const totalAmount = records.reduce((sum, record) => sum + (this.number(record.fields['实际成本']) || 0), 0);
-    for (const control of this.definitionControls(definition).filter((item) => item.required && item.visible !== false)) {
+    const expectedControlIds = this.expectedControlIds(approvalType);
+    const controls = this.definitionControls(definition);
+    const actualControlIds = new Set(controls.map((control) => control.id));
+    for (const controlId of expectedControlIds) {
+      if (!actualControlIds.has(controlId)) {
+        errors.push(`审批表单控件配置已变化：未找到控件 ${controlId}，请管理员更新插件映射。`);
+      }
+    }
+    for (const control of controls.filter((item) => item.required && item.visible !== false)) {
       const name = control.name || '未命名字段';
+      if (control.type !== 'account' && !expectedControlIds.has(control.id)) {
+        errors.push(`审批新增了未映射的必填项“${name}”，请管理员先更新插件映射。`);
+        continue;
+      }
       if (control.type === 'department') {
         if (!/^od-[\w-]+$/.test(this.config.walletDepartmentOpenId)) {
           errors.push(`审批必填项“${name}”未配置有效部门，请联系插件管理员处理。`);
@@ -385,11 +475,9 @@ export class PaymentService {
           errors.push(`审批必填项“${name}”不能为空，请补充付款执行明细或提交设置。`);
         }
       } else if (control.type === 'image' || control.type === 'imageV2') {
-        const missing = records.filter((record) => !this.attachmentEntries(record.fields['收款二维码']).length);
-        if (missing.length) errors.push(`审批必填项“${name}”缺少图片，请先在付款执行明细上传收款二维码。`);
+        // 图片由员工在付款提审台临时上传，预检阶段只返回动态上传项。
       } else if (control.type === 'attachmentV2' && !name.includes('项目明细')) {
-        const missing = records.filter((record) => !this.attachmentEntries(record.fields['验收/凭证附件']).length);
-        if (missing.length) errors.push(`审批必填项“${name}”缺少附件，请先在付款执行明细上传验收或凭证附件。`);
+        // 付款明细附件和补充凭证在提交阶段统一上传。
       } else if (control.type === 'textarea' && input && !input.reason?.trim()) {
         errors.push(`审批必填项“${name}”不能为空，请填写付款事由。`);
       } else if (control.type === 'date' && input && !input.expectedPaymentDate) {
@@ -397,7 +485,9 @@ export class PaymentService {
       } else if (control.type === 'radioV2' && approvalType === 'Corporate' && !this.config.corporatePaymentMethodValue) {
         errors.push(`审批必填项“${name}”未配置，请联系插件管理员设置付款方式。`);
       } else if (control.type === 'account') {
-        errors.push(`审批必填项“${name}”暂不支持通过飞书接口自动填写，请审批管理员将其改为非必填或移除。`);
+        if (approvalType !== 'Corporate') {
+          errors.push(`审批必填项“${name}”暂不支持通过飞书接口自动填写。`);
+        }
       } else if (control.type === 'connect') {
         errors.push(`审批必填项“${name}”尚未配置自动关联，请审批管理员将其改为非必填或移除。`);
       }
@@ -414,7 +504,7 @@ export class PaymentService {
     const empty = (value: unknown): boolean => value == null
       || value === ''
       || (Array.isArray(value) && value.length === 0);
-    for (const control of this.definitionControls(definition).filter((item) => item.required && item.visible !== false)) {
+    for (const control of this.definitionControls(definition).filter((item) => item.required && item.visible !== false && item.type !== 'account')) {
       const item = submitted.get(control.id);
       const value = control.type === 'contact' ? item?.open_ids : item?.value;
       if (!item || empty(value) || (control.type === 'amount' && Number(value) <= 0)) {
@@ -606,21 +696,30 @@ export class PaymentService {
       ContractStatus: this.text(record.fields['合同/订单状态']),
       InvoiceStatus: this.text(record.fields['发票/凭证状态']),
       AttachmentCount: this.attachmentEntries(record.fields['验收/凭证附件']).length,
+      Platform: this.text(record.fields['平台/合作需求类型']),
+      Account: this.text(record.fields['账号']),
+      Topic: this.text(record.fields['话题/内容']),
+      Link: this.text(record.fields['链接']),
+      TaxRate: this.text(record.fields['税点']),
+      PayeeAccountName: this.text(record.fields['收款户名（自动带出）']),
+      PayeeAccountNumber: this.text(record.fields['收款账号（自动带出）']),
+      BankName: this.text(record.fields['开户银行（自动带出）']),
+      BankBranch: this.text(record.fields['开户支行（自动带出）']),
+      Province: this.text(record.fields['开户省（自动带出）']),
+      City: this.text(record.fields['开户市（自动带出）']),
+      AccountType: this.text(record.fields['账户类型（自动带出）']),
       ProjectLinked: this.linkIds(record.fields['关联项目']).length === 1,
       ResourceLinked: this.linkIds(record.fields['关联资源']).length === 1,
       Errors: this.recordErrors(record),
     }));
+    const totalAmount = items.reduce((sum, item) => sum + (item.Cost || 0), 0);
+    const serviceFeeRate = approvalType === 'Cloud' ? 0.0665 : 0;
+    const approvalAmount = Math.round(totalAmount * (1 + serviceFeeRate) * 100) / 100;
     return {
       Action: 'Preview',
       ApprovalType: approvalType,
       ExecutionMode: 'Approval',
-      DefinitionName: approvalType === 'Cloud'
-        ? '【测试】云账户批量付款资源（仅达人）'
-        : approvalType === 'Wallet'
-          ? '【测试】小荷包'
-          : approvalType === 'Corporate'
-            ? '【测试】付款'
-            : '待识别付款审批',
+      DefinitionName: this.expectedDefinitionName(approvalType),
       AutoSubmitEnabled: blockingErrors.length === 0 && (approvalType === 'Cloud'
         ? [
             this.config.cloudApprovalCode,
@@ -637,12 +736,20 @@ export class PaymentService {
               this.config.corporateWidgets.method,
               this.config.corporateWidgets.date,
             ].every(Boolean)
-          : Object.values(this.config.walletWidgets).every(Boolean)),
+          : [
+              this.config.walletApprovalCode,
+              this.config.walletWidgets.detail,
+              this.config.walletWidgets.amount,
+              this.config.walletWidgets.qr,
+            ].every(Boolean)),
       RecordCount: records.length,
-      TotalAmount: items.reduce((sum, item) => sum + (item.Cost || 0), 0),
+      TotalAmount: totalAmount,
+      ApprovalAmount: approvalAmount,
+      ServiceFeeRate: serviceFeeRate,
       CanSubmit: records.length > 0 && errors.length === 0,
       BlockingErrors: blockingErrors,
       Errors: errors,
+      RequiredUploads: this.requiredUploads(records, definition),
       Records: items,
     };
   }
@@ -663,11 +770,11 @@ export class PaymentService {
     const rows = records.map((record) => [
       batchId, record.recordId, this.text(record.fields['付款明细名称']), this.text(record.fields['项目编号（自动带出）']),
       this.text(record.fields['项目名称']), this.text(record.fields['资源账号（自动带出）']), this.text(record.fields['收款人（自动带出）']),
-      this.text(record.fields['收款账户（自动带出）']), this.text(record.fields['银行卡号（自动带出）']), this.text(record.fields['对应合同（自动带出）']),
+      this.text(record.fields['收款账户（自动带出）']), this.text(record.fields['银行卡号（自动带出）']),
       this.text(record.fields['收款户名（自动带出）']), this.text(record.fields['收款账号（自动带出）']),
       this.text(record.fields['开户银行（自动带出）']), this.text(record.fields['开户支行（自动带出）']),
       this.text(record.fields['开户省（自动带出）']), this.text(record.fields['开户市（自动带出）']),
-      this.text(record.fields['账户类型（自动带出）']),
+      this.text(record.fields['账户类型（自动带出）']), this.text(record.fields['对应合同（自动带出）']),
       this.text(record.fields['平台/合作需求类型']), this.text(record.fields['账号']), this.text(record.fields['话题/内容']), this.text(record.fields['链接']),
       this.number(record.fields['实际成本']), this.text(record.fields['税点']), this.text(record.fields['付款形式']),
     ]);
@@ -797,7 +904,12 @@ export class PaymentService {
     };
   }
 
-  async submit(req: Request, res: Response, input: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; confirmed?: boolean; allowValidationErrors?: boolean }) {
+  async submit(
+    req: Request,
+    res: Response,
+    input: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; confirmed?: boolean; allowValidationErrors?: boolean },
+    files: UploadedPaymentFile[] = [],
+  ) {
     if (input.confirmed !== true) throw new HttpException('提交前需要明确确认', HttpStatus.BAD_REQUEST);
     if (!input.reason?.trim()) throw new HttpException('付款事由不能为空', HttpStatus.BAD_REQUEST);
     if (!input.paymentEntity?.trim()) throw new HttpException('付款主体不能为空', HttpStatus.BAD_REQUEST);
@@ -808,6 +920,24 @@ export class PaymentService {
     const errors = this.validate(records, approvalType);
     const definition = await this.approvalDefinition(token, approvalType);
     const blockingErrors = this.requiredApprovalErrors(records, approvalType, definition, input);
+    const screenshotFile = files.find((file) => file.fieldname === 'detailScreenshot');
+    const qrFile = files.find((file) => file.fieldname === 'qrFile');
+    const supportingFiles = files.filter((file) => file.fieldname === 'supportingFiles');
+    if (!screenshotFile) blockingErrors.push('付款执行明细截图生成失败，请刷新插件后重试。');
+    if (screenshotFile && screenshotFile.mimetype !== 'image/png') {
+      blockingErrors.push('付款执行明细截图格式异常，请刷新插件后重新生成。');
+    }
+    if (qrFile && !qrFile.mimetype.startsWith('image/')) {
+      blockingErrors.push('收款二维码必须上传图片文件。');
+    }
+    for (const upload of this.requiredUploads(records, definition)) {
+      if (upload.Key === 'qr' && upload.Required && !qrFile) {
+        blockingErrors.push(`审批必填项“${upload.Name}”尚未上传，请在付款提审台补充后再提交。`);
+      }
+      if (upload.Key === 'supporting' && upload.Required && !upload.SatisfiedByBase && !supportingFiles.length) {
+        blockingErrors.push(`审批必填项“${upload.Name}”没有可用附件，请在付款提审台补充后再提交。`);
+      }
+    }
     if (blockingErrors.length) throw new HttpException(blockingErrors.join('\n'), HttpStatus.BAD_REQUEST);
     if (errors.length && input.allowValidationErrors !== true) throw new HttpException(errors.join('\n'), HttpStatus.BAD_REQUEST);
 
@@ -816,11 +946,7 @@ export class PaymentService {
     const totalAmount = records.reduce((sum, record) => sum + (this.number(record.fields['实际成本']) || 0), 0);
     const reason = `${input.reason.trim()} [${batchId}]`;
     if (approvalType === 'Unknown') throw new HttpException('付款形式无法从关联资源自动带出，请先关联资源入库审批。', HttpStatus.BAD_REQUEST);
-    const definitionName = approvalType === 'Cloud'
-      ? '【测试】云账户批量付款资源（仅达人）'
-      : approvalType === 'Wallet'
-        ? '【测试】小荷包'
-        : '【测试】付款';
+    const definitionName = this.expectedDefinitionName(approvalType);
     const approvalLink = approvalType === 'Cloud'
       ? this.config.cloudApprovalLink
       : approvalType === 'Wallet'
@@ -829,22 +955,29 @@ export class PaymentService {
     try {
       const nowText = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai', dateStyle: 'short', timeStyle: 'medium' }).format(new Date());
 
-      const attachments = await this.resolvedAttachments(token, records);
-      const detailCode = await this.uploadApprovalFile(this.csv(records, batchId), `${batchId}-payment-details.csv`, 'text/csv');
+      const screenshotCode = await this.uploadApprovalFile(
+        screenshotFile!.buffer,
+        `${batchId}-付款执行明细.png`,
+        screenshotFile!.mimetype || 'image/png',
+      );
+      const csvCode = await this.uploadApprovalFile(this.csv(records, batchId), `${batchId}-payment-details.csv`, 'text/csv');
+      const detailCodes = [screenshotCode, csvCode];
       const evidenceCodes: string[] = [];
+      const attachments = this.requiredUploads(records, definition).some((upload) => upload.Key === 'supporting')
+        ? await this.resolvedAttachments(token, records)
+        : [];
       for (const attachment of attachments) {
         const query = new URLSearchParams();
         if (attachment.extraInfo) query.set('extra', attachment.extraInfo);
         const downloaded = await this.feishu.download(`drive/v1/medias/${attachment.fileToken}/download?${query}`, token);
         evidenceCodes.push(await this.uploadApprovalFile(downloaded.buffer, attachment.name, downloaded.contentType));
       }
+      for (const file of supportingFiles) {
+        evidenceCodes.push(await this.uploadApprovalFile(file.buffer, file.originalname, file.mimetype));
+      }
       const qrCodes: string[] = [];
-      if (approvalType === 'Wallet') {
-        const qrAttachments = await this.resolvedAttachments(token, records, '收款二维码');
-        for (const attachment of qrAttachments) {
-          const downloaded = await this.feishu.download(`drive/v1/medias/${attachment.fileToken}/download`, token);
-          qrCodes.push(await this.uploadApprovalFile(downloaded.buffer, attachment.name, downloaded.contentType, 'image'));
-        }
+      if (qrFile) {
+        qrCodes.push(await this.uploadApprovalFile(qrFile.buffer, qrFile.originalname, qrFile.mimetype, 'image'));
       }
       await this.updateRecords(token, recordIds, {
         '付款批次号': batchId,
@@ -854,45 +987,11 @@ export class PaymentService {
         '付款主体': input.paymentEntity.trim(),
         '期望付款日期': `${input.expectedPaymentDate} 00:00:00`,
         '付款审批链接': approvalLink,
-        '审批附件Codes': JSON.stringify({ detail: detailCode, evidence: evidenceCodes, qr: qrCodes }),
+        '审批附件Codes': JSON.stringify({ detail: detailCodes, evidence: evidenceCodes, qr: qrCodes }),
         '审批附件上传时间': nowText,
         '提交失败原因': null,
         '申请付款选择框': false,
       });
-
-      const autoSubmitEnabled = approvalType === 'Cloud'
-        ? [
-            this.config.cloudApprovalCode,
-            ...Object.values(this.config.cloudWidgets),
-          ].every(Boolean)
-        : approvalType === 'Corporate'
-          ? [
-              this.config.corporateApprovalCode,
-              this.config.corporateWidgets.department,
-              this.config.corporateWidgets.contact,
-              this.config.corporateWidgets.reason,
-              this.config.corporateWidgets.detail,
-              this.config.corporateWidgets.amount,
-              this.config.corporateWidgets.method,
-              this.config.corporateWidgets.date,
-            ].every(Boolean)
-          : Object.values(this.config.walletWidgets).every(Boolean);
-      if (!autoSubmitEnabled) {
-        const blocker = approvalType === 'Cloud'
-          ? '云账户审批控件配置不完整，已准备付款明细及附件，请检查云账户审批定义后重试。'
-          : approvalType === 'Corporate'
-          ? `普通付款流程仍含 API 无法自动填写的必填控件（收款银行账户${this.config.corporateAccountControlRequired ? '、关联合同' : ''}）。已自动准备付款明细和附件；请将这些控件改为非必填或移除，并把 PROJECT_ACCOUNT_CONTROL_REQUIRED / PROJECT_CONTRACT_CONTROL_REQUIRED 设为 false 后，插件会直接提审。`
-          : '小荷包审批控件配置不完整，已准备付款明细及附件，请检查审批定义后重试。';
-        await this.updateRecords(token, recordIds, {
-          '付款进度': '待申请',
-          '批量提交状态': '待提单',
-          '提交失败原因': null,
-        });
-        return {
-          Action: 'Submit', BatchId: batchId, ApprovalType: approvalType, Submitted: false, ApprovalLink: approvalLink,
-          Blocker: blocker,
-        };
-      }
 
       let form: Array<Record<string, unknown>>;
       if (approvalType === 'Cloud') {
@@ -905,15 +1004,14 @@ export class PaymentService {
           { id: widgets.projectCode, type: 'input', value: projectCode || '' },
           { id: widgets.entity, type: 'input', value: input.paymentEntity.trim() },
           { id: widgets.reason, type: 'textarea', value: reason },
-          { id: widgets.detail, type: 'attachmentV2', value: [detailCode] },
-          { id: widgets.amount, type: 'amount', value: totalAmount, currency: 'CNY' },
+          { id: widgets.detail, type: 'attachmentV2', value: detailCodes },
+          { id: widgets.amount, type: 'amount', value: Math.round(totalAmount * 1.0665 * 100) / 100, currency: 'CNY' },
           { id: widgets.date, type: 'date', value: `${input.expectedPaymentDate}T00:00:00+08:00` },
         ];
       } else if (approvalType === 'Wallet') {
         const widgets = this.config.walletWidgets;
         form = [
-          { id: widgets.department, type: 'department', value: [{ open_id: this.config.walletDepartmentOpenId }] },
-          { id: widgets.detail, type: 'attachmentV2', value: [detailCode] },
+          { id: widgets.detail, type: 'attachmentV2', value: detailCodes },
           { id: widgets.amount, type: 'amount', value: totalAmount, currency: 'CNY' },
           { id: widgets.qr, type: 'image', value: qrCodes },
         ];
@@ -927,7 +1025,7 @@ export class PaymentService {
           { id: widgets.department, type: 'department', value: [{ open_id: this.config.walletDepartmentOpenId }] },
           { id: widgets.contact, type: 'contact', open_ids: [contactId] },
           { id: widgets.reason, type: 'textarea', value: reason },
-          { id: widgets.detail, type: 'attachmentV2', value: [detailCode] },
+          { id: widgets.detail, type: 'attachmentV2', value: detailCodes },
           { id: widgets.amount, type: 'amount', value: totalAmount, currency: 'CNY' },
           { id: widgets.method, type: 'radioV2', value: this.config.corporatePaymentMethodValue },
           { id: widgets.date, type: 'date', value: `${input.expectedPaymentDate}T00:00:00+08:00` },
@@ -963,6 +1061,7 @@ export class PaymentService {
         Action: 'Submit', BatchId: batchId, ApprovalType: approvalType, ExecutionMode: 'Approval', Submitted: true,
         InstanceCode: created.instance_code, InstanceLink: finalLink, SerialNumber: serialNumber, RecordCount: records.length,
         BaseAmount: totalAmount,
+        AmountWithServiceFee: approvalType === 'Cloud' ? Math.round(totalAmount * 1.0665 * 100) / 100 : totalAmount,
       };
     } catch (error) {
       const detail = this.friendlyApprovalError(error, definition);

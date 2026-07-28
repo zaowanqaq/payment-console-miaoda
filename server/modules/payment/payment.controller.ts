@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Post, Query, Req, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, Query, Req, Res, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
+import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { FeishuService } from './feishu.service';
 import { PaymentService } from './payment.service';
 
@@ -42,8 +43,22 @@ export class PaymentController {
 
   @Post('batches/submit')
   @NeedLogin()
-  submit(@Req() req: Request, @Res({ passthrough: true }) res: Response, @Body() body: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; confirmed?: boolean; allowValidationErrors?: boolean }) {
-    return this.payment.submit(req, res, body);
+  @UseInterceptors(AnyFilesInterceptor({
+    limits: { files: 12, fileSize: 20 * 1024 * 1024 },
+  }))
+  submit(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body() body: { payload?: string },
+    @UploadedFiles() files: Array<{ fieldname: string; originalname: string; mimetype: string; size: number; buffer: Buffer }> = [],
+  ) {
+    let payload: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; confirmed?: boolean; allowValidationErrors?: boolean };
+    try {
+      payload = JSON.parse(body.payload || '{}') as typeof payload;
+    } catch {
+      throw new BadRequestException('提交参数格式不正确');
+    }
+    return this.payment.submit(req, res, payload, files);
   }
 
   @Post('approvals/sync')

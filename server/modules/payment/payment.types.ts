@@ -30,9 +30,30 @@ export type BatchRecord = {
   ContractStatus: string | null;
   InvoiceStatus: string | null;
   AttachmentCount: number;
+  Platform: string | null;
+  Account: string | null;
+  Topic: string | null;
+  Link: string | null;
+  TaxRate: string | null;
+  PayeeAccountName: string | null;
+  PayeeAccountNumber: string | null;
+  BankName: string | null;
+  BankBranch: string | null;
+  Province: string | null;
+  City: string | null;
+  AccountType: string | null;
   ProjectLinked: boolean;
   ResourceLinked: boolean;
   Errors: string[];
+};
+
+export type RequiredUpload = {
+  Key: 'supporting' | 'qr';
+  ControlId: string;
+  Name: string;
+  Kind: 'attachment' | 'image';
+  Required: boolean;
+  SatisfiedByBase: boolean;
 };
 
 export type BatchPreview = {
@@ -43,8 +64,11 @@ export type BatchPreview = {
   AutoSubmitEnabled: boolean;
   RecordCount: number;
   TotalAmount: number;
+  ApprovalAmount: number;
+  ServiceFeeRate: number;
   CanSubmit: boolean;
   BlockingErrors: string[];
   Errors: string[];
+  RequiredUploads: RequiredUpload[];
   Records: BatchRecord[];
 };

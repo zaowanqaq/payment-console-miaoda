@@ -6,12 +6,13 @@ import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBac
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   try {
     const paymentSession = window.localStorage.getItem('payment_feishu_session')
+    const isFormData = init?.body instanceof FormData
     const response = await axiosForBackend({
       url,
       method: init?.method || 'GET',
-      data: init?.body ? JSON.parse(String(init.body)) : undefined,
+      data: isFormData ? init.body : init?.body ? JSON.parse(String(init.body)) : undefined,
       headers: {
-        'Content-Type': 'application/json',
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...(paymentSession ? { 'X-Payment-Session': paymentSession } : {}),
       },
     })
@@ -46,11 +47,20 @@ export const api = {
       tableId: context.tableId || '',
       viewId: context.viewId || '',
     })}`),
-  submit: (input: { reason: string; paymentEntity: string; expectedPaymentDate: string; allowValidationErrors: boolean }) =>
-    request<SubmitResult>('/api/batches/submit', {
+  submit: (
+    input: { reason: string; paymentEntity: string; expectedPaymentDate: string; allowValidationErrors: boolean },
+    files: { detailScreenshot: File; qrFile?: File | null; supportingFiles?: File[] },
+  ) => {
+    const body = new FormData()
+    body.append('payload', JSON.stringify({ ...input, confirmed: true }))
+    body.append('detailScreenshot', files.detailScreenshot)
+    if (files.qrFile) body.append('qrFile', files.qrFile)
+    for (const file of files.supportingFiles || []) body.append('supportingFiles', file)
+    return request<SubmitResult>('/api/batches/submit', {
       method: 'POST',
-      body: JSON.stringify({ ...input, confirmed: true }),
-    }),
+      body,
+    })
+  },
   sync: () => new URLSearchParams(window.location.search).has('demo')
     ? Promise.resolve({ ok: true })
     : request<unknown>('/api/approvals/sync', {
