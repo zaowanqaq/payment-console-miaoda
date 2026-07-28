@@ -366,8 +366,8 @@ export class PaymentService {
     if (paymentEntities.length > 1) errors.push('不同付款主体不能混合提审，请按承接主体拆分批次。');
     if (approvalType === 'Corporate') {
       const payeeKeys = [...new Set(records.map((record) => [
-        this.normalized(record.fields['收款户名（自动带出）'] || record.fields['收款账户（自动带出）']),
-        this.normalized(record.fields['收款账号（自动带出）'] || record.fields['银行卡号（自动带出）']),
+        this.normalized(record.fields['收款户名（自动带出）']),
+        this.normalized(record.fields['收款账号（自动带出）']),
         this.normalized(record.fields['开户省（自动带出）']),
         this.normalized(record.fields['开户市（自动带出）']),
       ].join('|')))];
@@ -698,8 +698,6 @@ export class PaymentService {
         '资源账号（自动带出）': resourceRecord?.fields['资源代称'] ?? record.fields['资源账号（自动带出）'],
         '收款人（自动带出）': resourceRecord?.fields['真实姓名'] ?? record.fields['收款人（自动带出）'],
         '资源支付形式（自动带出）': resourceRecord?.fields['资源支付形式'] ?? record.fields['资源支付形式（自动带出）'],
-        '收款账户（自动带出）': resourceRecord?.fields['收款账户'],
-        '银行卡号（自动带出）': resourceRecord?.fields['银行卡号'],
         '付款主体': paymentEntity,
         '付款联系人OpenId（自动带出）': projectInitiatorId,
         ...this.paymentAccountPatch(resourceAccount),
@@ -835,14 +833,13 @@ export class PaymentService {
   private csv(records: BaseRecord[], batchId: string): Buffer {
     const columns = [
       '付款批次号', '付款记录ID', '付款明细名称', '项目编号', '项目名称', '资源账号', '收款人',
-      '收款账户', '银行卡号', '收款户名', '收款账号', '开户银行', '开户支行', '开户省', '开户市', '账户类型',
+      '收款户名', '收款账号', '开户银行', '开户支行', '开户省', '开户市', '账户类型',
       '对应合同', '平台类型', '账号', '话题内容', '链接', '实际成本', '税点', '付款方式',
     ];
     const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const rows = records.map((record) => [
       batchId, record.recordId, this.text(record.fields['付款明细名称']), this.text(record.fields['项目编号（自动带出）']),
       this.text(record.fields['项目名称']), this.text(record.fields['资源账号（自动带出）']), this.text(record.fields['收款人（自动带出）']),
-      this.text(record.fields['收款账户（自动带出）']), this.text(record.fields['银行卡号（自动带出）']),
       this.text(record.fields['收款户名（自动带出）']), this.text(record.fields['收款账号（自动带出）']),
       this.text(record.fields['开户银行（自动带出）']), this.text(record.fields['开户支行（自动带出）']),
       this.text(record.fields['开户省（自动带出）']), this.text(record.fields['开户市（自动带出）']),
