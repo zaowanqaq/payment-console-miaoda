@@ -19,6 +19,7 @@ export type BatchRecord = {
 export type BatchPreview = {
   Action: 'Preview'
   ApprovalType: 'Cloud' | 'Corporate' | 'Wallet' | 'Unknown'
+  ExecutionMode: 'Approval' | 'ManualPayment'
   DefinitionName: string
   AutoSubmitEnabled: boolean
   RecordCount: number
@@ -41,6 +42,7 @@ export type SubmitResult = {
   Action: 'Submit'
   BatchId: string
   ApprovalType: 'Cloud' | 'Corporate' | 'Wallet'
+  ExecutionMode: 'Approval' | 'ManualPayment'
   Submitted: boolean
   InstanceCode?: string
   InstanceLink?: string
@@ -49,5 +51,6 @@ export type SubmitResult = {
   AmountWithServiceFee?: number
   ApprovalLink?: string
   Blocker?: string
+  RequiresManualPayment?: boolean
   Next?: string
 }

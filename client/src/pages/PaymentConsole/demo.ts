@@ -3,8 +3,9 @@ import type { BatchPreview } from './types'
 export const demoPreview: BatchPreview = {
   Action: 'Preview',
   ApprovalType: 'Cloud',
-  DefinitionName: '【测试】云账户批量付款资源（仅达人）',
-  AutoSubmitEnabled: true,
+  ExecutionMode: 'ManualPayment',
+  DefinitionName: '云账户支付（形式提醒，无需审批）',
+  AutoSubmitEnabled: false,
   RecordCount: 3,
   TotalAmount: 18650,
   CanSubmit: true,

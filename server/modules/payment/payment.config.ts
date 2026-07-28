@@ -24,16 +24,14 @@ export class PaymentConfig {
   readonly cloudSyncTableId = required('CLOUD_SYNC_TABLE_ID');
   readonly walletSyncTableId = required('WALLET_SYNC_TABLE_ID');
   readonly corporateApprovalCode = required('PROJECT_APPROVAL_CODE');
-  readonly cloudApprovalCode = required('CLOUD_APPROVAL_CODE');
   readonly walletApprovalCode = required('WALLET_APPROVAL_CODE');
-  readonly cloudWidgets = {
-    reason: optional('CLOUD_WIDGET_REASON_ID'),
-    detail: optional('CLOUD_WIDGET_DETAIL_ATTACHMENT_ID'),
-    evidence: optional('CLOUD_WIDGET_EVIDENCE_ATTACHMENT_ID'),
-    amount: optional('CLOUD_WIDGET_AMOUNT_ID'),
-    date: optional('CLOUD_WIDGET_DATE_ID'),
+  readonly walletWidgets = {
+    department: optional('WALLET_WIDGET_DEPARTMENT_ID') || 'widget17848854158820001',
+    detail: optional('WALLET_WIDGET_DETAIL_ATTACHMENT_ID') || 'widget17848854208630001',
+    amount: optional('WALLET_WIDGET_AMOUNT_ID') || 'widget17848854285820001',
+    qr: optional('WALLET_WIDGET_QR_IMAGE_ID') || 'widget17848854409660001',
   };
-  readonly cloudAutoSubmitEnabled = Object.values(this.cloudWidgets).every(Boolean);
+  readonly walletDepartmentOpenId = optional('WALLET_DEPARTMENT_OPEN_ID') || '7399527746871279619';
   readonly corporateWidgets = {
     reason: optional('PROJECT_WIDGET_REASON_ID'),
     detail: optional('PROJECT_WIDGET_DETAIL_ATTACHMENT_ID'),
@@ -50,7 +48,6 @@ export class PaymentConfig {
   readonly oauthRedirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI?.trim();
   readonly clientBasePath = process.env.CLIENT_BASE_PATH?.trim().replace(/\/$/, '') || '';
   readonly corporateApprovalLink = process.env.PROJECT_APPROVAL_LINK?.trim() || '';
-  readonly cloudApprovalLink = process.env.CLOUD_APPROVAL_LINK?.trim() || '';
   readonly walletApprovalLink = process.env.WALLET_APPROVAL_LINK?.trim() || '';
   readonly oauthScopes = [
     'auth:user.id:read',
