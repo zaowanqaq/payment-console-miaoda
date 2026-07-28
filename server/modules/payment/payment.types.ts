@@ -44,6 +44,7 @@ export type BatchPreview = {
   RecordCount: number;
   TotalAmount: number;
   CanSubmit: boolean;
+  BlockingErrors: string[];
   Errors: string[];
   Records: BatchRecord[];
 };

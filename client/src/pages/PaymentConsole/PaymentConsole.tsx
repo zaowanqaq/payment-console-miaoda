@@ -177,7 +177,8 @@ function App() {
       ? '确认发起审批'
       : '准备审批附件'
   const hasValidationErrors = Boolean(preview?.Errors.length)
-  const isReady = Boolean(preview?.RecordCount && (preview.CanSubmit || allowValidationErrors) && reason.trim() && expectedPaymentDate && !submitting)
+  const hasBlockingErrors = Boolean(preview?.BlockingErrors.length)
+  const isReady = Boolean(preview?.RecordCount && !hasBlockingErrors && (preview.CanSubmit || allowValidationErrors) && reason.trim() && expectedPaymentDate && !submitting)
   const rowErrorCount = useMemo(
     () => preview?.Records.filter((record) => record.Errors.length > 0).length ?? 0,
     [preview],
@@ -339,13 +340,13 @@ function App() {
           <div className="validation-summary">
             <div className="validation-title">
               {preview?.CanSubmit ? <CheckCircle2 size={19} /> : <AlertCircle size={19} />}
-              <strong>{preview?.CanSubmit ? '批次条件完整' : allowValidationErrors ? '已允许带问题提交' : '批次暂不可提交'}</strong>
+              <strong>{preview?.CanSubmit ? '批次条件完整' : hasBlockingErrors ? '审批必填项待补充' : allowValidationErrors ? '已允许带问题提交' : '批次暂不可提交'}</strong>
             </div>
             <span>{rowErrorCount > 0 ? `${rowErrorCount} 条明细存在问题` : '资源、项目及付款条件已核对'}</span>
             {preview?.Errors.slice(0, 4).map((item) => <p key={item}>{item}</p>)}
           </div>
 
-          {hasValidationErrors && preview?.RecordCount ? (
+          {hasValidationErrors && !hasBlockingErrors && preview?.RecordCount ? (
             <label className="override-toggle">
               <input type="checkbox" checked={allowValidationErrors} onChange={(event) => setAllowValidationErrors(event.target.checked)} />
               <span>
@@ -353,6 +354,13 @@ function App() {
                 <small>仅跳过本次预检拦截，具体审批仍由飞书流程审核</small>
               </span>
             </label>
+          ) : null}
+
+          {hasBlockingErrors && preview?.RecordCount ? (
+            <div className="account-notice">
+              <AlertCircle size={18} />
+              <span>{preview.BlockingErrors[0]} 必填项不能通过“允许带问题提交”跳过。</span>
+            </div>
           ) : null}
 
           {preview?.ExecutionMode === 'Approval' && !preview?.AutoSubmitEnabled && preview?.RecordCount > 0 && (

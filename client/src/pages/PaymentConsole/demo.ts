@@ -9,6 +9,7 @@ export const demoPreview: BatchPreview = {
   RecordCount: 3,
   TotalAmount: 18650,
   CanSubmit: true,
+  BlockingErrors: [],
   Errors: [],
   Records: [
     {

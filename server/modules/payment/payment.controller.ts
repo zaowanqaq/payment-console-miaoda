@@ -42,7 +42,7 @@ export class PaymentController {
 
   @Post('batches/submit')
   @NeedLogin()
-  submit(@Req() req: Request, @Res({ passthrough: true }) res: Response, @Body() body: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; confirmed?: boolean }) {
+  submit(@Req() req: Request, @Res({ passthrough: true }) res: Response, @Body() body: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; confirmed?: boolean; allowValidationErrors?: boolean }) {
     return this.payment.submit(req, res, body);
   }
 

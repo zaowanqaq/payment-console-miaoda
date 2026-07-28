@@ -14,6 +14,20 @@ type BaseListResponse = {
 
 type ApprovalType = 'Cloud' | 'Corporate' | 'Wallet' | 'Unknown';
 
+type ApprovalControlDefinition = {
+  id: string;
+  name: string;
+  required?: boolean;
+  type: string;
+  visible?: boolean;
+};
+
+type ApprovalDefinition = {
+  approval_name?: string;
+  form?: string | ApprovalControlDefinition[];
+  node_list?: Array<{ name?: string; need_approver?: boolean }>;
+};
+
 type ParsedResourceAccount = {
   sourceInstanceCode: string;
   status: string;
@@ -308,6 +322,137 @@ export class PaymentService {
     return [...new Set(errors)];
   }
 
+  private approvalCode(approvalType: ApprovalType): string {
+    if (approvalType === 'Cloud') return this.config.cloudApprovalCode;
+    if (approvalType === 'Wallet') return this.config.walletApprovalCode;
+    if (approvalType === 'Corporate') return this.config.corporateApprovalCode;
+    return '';
+  }
+
+  private async approvalDefinition(token: string, approvalType: ApprovalType): Promise<ApprovalDefinition | null> {
+    const approvalCode = this.approvalCode(approvalType);
+    if (!approvalCode) return null;
+    try {
+      return await this.feishu.api<ApprovalDefinition>(
+        `approval/v4/approvals/${approvalCode}/detail`,
+        token,
+      );
+    } catch {
+      throw new HttpException('暂时无法读取飞书审批的必填项配置，请稍后刷新重试。', HttpStatus.BAD_GATEWAY);
+    }
+  }
+
+  private definitionControls(definition: ApprovalDefinition | null): ApprovalControlDefinition[] {
+    if (!definition?.form) return [];
+    if (Array.isArray(definition.form)) return definition.form;
+    try {
+      const parsed = JSON.parse(definition.form) as unknown;
+      return Array.isArray(parsed) ? parsed as ApprovalControlDefinition[] : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private requiredApprovalErrors(
+    records: BaseRecord[],
+    approvalType: ApprovalType,
+    definition: ApprovalDefinition | null,
+    input?: { reason?: string; expectedPaymentDate?: string },
+  ): string[] {
+    const errors: string[] = [];
+    const totalAmount = records.reduce((sum, record) => sum + (this.number(record.fields['实际成本']) || 0), 0);
+    for (const control of this.definitionControls(definition).filter((item) => item.required && item.visible !== false)) {
+      const name = control.name || '未命名字段';
+      if (control.type === 'department') {
+        if (!/^od-[\w-]+$/.test(this.config.walletDepartmentOpenId)) {
+          errors.push(`审批必填项“${name}”未配置有效部门，请联系插件管理员处理。`);
+        }
+      } else if (control.type === 'contact') {
+        const contactId = this.userIds(records[0]?.fields['付款联系人OpenId（自动带出）'])[0];
+        if (!contactId) errors.push(`审批必填项“${name}”无法自动带出，请检查关联项目的发起人。`);
+      } else if (control.type === 'amount') {
+        if (totalAmount <= 0) errors.push(`审批必填项“${name}”必须大于 0，请填写付款执行明细的实际成本。`);
+      } else if (control.type === 'image' || control.type === 'imageV2') {
+        const missing = records.filter((record) => !this.attachmentEntries(record.fields['收款二维码']).length);
+        if (missing.length) errors.push(`审批必填项“${name}”缺少图片，请先在付款执行明细上传收款二维码。`);
+      } else if (control.type === 'attachmentV2' && !name.includes('项目明细')) {
+        const missing = records.filter((record) => !this.attachmentEntries(record.fields['验收/凭证附件']).length);
+        if (missing.length) errors.push(`审批必填项“${name}”缺少附件，请先在付款执行明细上传验收或凭证附件。`);
+      } else if (control.type === 'textarea' && input && !input.reason?.trim()) {
+        errors.push(`审批必填项“${name}”不能为空，请填写付款事由。`);
+      } else if (control.type === 'date' && input && !input.expectedPaymentDate) {
+        errors.push(`审批必填项“${name}”不能为空，请选择期望付款日期。`);
+      } else if (control.type === 'radioV2' && approvalType === 'Corporate' && !this.config.corporatePaymentMethodValue) {
+        errors.push(`审批必填项“${name}”未配置，请联系插件管理员设置付款方式。`);
+      } else if (control.type === 'account') {
+        errors.push(`审批必填项“${name}”暂不支持通过飞书接口自动填写，请审批管理员将其改为非必填或移除。`);
+      } else if (control.type === 'connect') {
+        errors.push(`审批必填项“${name}”尚未配置自动关联，请审批管理员将其改为非必填或移除。`);
+      }
+    }
+    if (definition?.node_list?.some((node) => node.need_approver)) {
+      errors.push('当前审批流程仍要求发起人选择审批人，插件无法自动选择；请审批管理员取消该节点的“发起人选择审批人”。');
+    }
+    return [...new Set(errors)];
+  }
+
+  private submittedFormErrors(definition: ApprovalDefinition | null, form: Array<Record<string, unknown>>): string[] {
+    const submitted = new Map(form.map((item) => [String(item.id || ''), item]));
+    const errors: string[] = [];
+    const empty = (value: unknown): boolean => value == null
+      || value === ''
+      || (Array.isArray(value) && value.length === 0);
+    for (const control of this.definitionControls(definition).filter((item) => item.required && item.visible !== false)) {
+      const item = submitted.get(control.id);
+      const value = control.type === 'contact' ? item?.open_ids : item?.value;
+      if (!item || empty(value) || (control.type === 'amount' && Number(value) <= 0)) {
+        errors.push(`审批必填项“${control.name || '未命名字段'}”尚未填写，请补充后再提审。`);
+      }
+    }
+    return errors;
+  }
+
+  private friendlyApprovalError(error: unknown, definition: ApprovalDefinition | null): string {
+    const raw = error instanceof Error ? error.message : String(error);
+    const widgetId = raw.match(/widget\d+/)?.[0];
+    const control = widgetId
+      ? this.definitionControls(definition).find((item) => item.id === widgetId)
+      : undefined;
+    if (/validate form error/i.test(raw)) {
+      return control
+        ? `审批必填项“${control.name}”未填写或格式不正确，请检查后重新提审。`
+        : '审批表单中有必填项未填写或格式不正确，请检查付款明细后重新提审。';
+    }
+    if (/approver|审批人|node_approver/i.test(raw)) {
+      return '审批流程要求发起人选择审批人，请审批管理员取消该设置后重新提审。';
+    }
+    if (/permission|forbidden|scope|无权限/i.test(raw)) {
+      return '当前账号没有发起该审批所需的权限，请联系审批管理员检查可见范围和应用权限。';
+    }
+    if (/token|unauthorized|登录|授权/i.test(raw)) {
+      return '飞书授权已失效，请重新授权后再提审。';
+    }
+    if (/duplicate|uuid|重复/i.test(raw)) {
+      return '本批次已经提交过，请先刷新审批状态，避免重复提审。';
+    }
+    if (raw.startsWith('审批必填项') || raw.startsWith('当前审批流程')) return raw;
+    return '飞书暂时未能创建审批，请刷新后重试；若仍失败，请联系插件管理员检查审批流程配置。';
+  }
+
+  private friendlyDataError(error: unknown): string {
+    const raw = error instanceof Error ? error.message : String(error);
+    if (/data not ready|try again later|timeout|timed out/i.test(raw)) {
+      return '关联数据正在同步，请稍后刷新重试。';
+    }
+    if (/permission|forbidden|scope|无权限/i.test(raw)) {
+      return '当前账号没有更新付款明细的权限，请联系多维表格管理员。';
+    }
+    if (/record.*not found|not found|不存在/i.test(raw)) {
+      return '关联记录已不存在，请重新选择立项或资源记录。';
+    }
+    return '关联数据暂时无法更新，请刷新后重试。';
+  }
+
   private async listTableRecords(token: string, tableId: string, filter?: Record<string, unknown>): Promise<BaseRecord[]> {
     const records: BaseRecord[] = [];
     let offset = 0;
@@ -413,7 +558,7 @@ export class PaymentService {
       try {
         await this.updateRecords(token, [record.recordId], patch);
       } catch (error) {
-        errors.push(`关联回写失败：${error instanceof Error ? error.message : String(error)}`);
+        errors.push(this.friendlyDataError(error));
         patch['校验状态'] = '阻断';
         patch['校验错误'] = errors.join('\n');
       }
@@ -433,7 +578,9 @@ export class PaymentService {
     const token = await this.feishu.userToken(req, res) as string;
     const records = await this.resolveLinkages(token, await this.listRecords(token, this.selectedFilter()));
     const approvalType = this.resolveApprovalType(records);
-    const errors = this.validate(records, approvalType);
+    const definition = await this.approvalDefinition(token, approvalType);
+    const blockingErrors = this.requiredApprovalErrors(records, approvalType, definition);
+    const errors = [...new Set([...blockingErrors, ...this.validate(records, approvalType)])];
     const items = records.map((record) => ({
       RecordId: record.recordId,
       Name: this.text(record.fields['付款明细名称']) || record.recordId,
@@ -462,14 +609,24 @@ export class PaymentService {
           : approvalType === 'Corporate'
             ? '【测试】付款'
             : '待识别付款审批',
-      AutoSubmitEnabled: approvalType === 'Cloud'
+      AutoSubmitEnabled: blockingErrors.length === 0 && (approvalType === 'Cloud'
         ? Boolean(this.config.cloudApprovalCode)
         : approvalType === 'Corporate'
-          ? this.config.corporateAutoSubmitEnabled
-          : Object.values(this.config.walletWidgets).every(Boolean),
+          ? [
+              this.config.corporateApprovalCode,
+              this.config.corporateWidgets.department,
+              this.config.corporateWidgets.contact,
+              this.config.corporateWidgets.reason,
+              this.config.corporateWidgets.detail,
+              this.config.corporateWidgets.amount,
+              this.config.corporateWidgets.method,
+              this.config.corporateWidgets.date,
+            ].every(Boolean)
+          : Object.values(this.config.walletWidgets).every(Boolean)),
       RecordCount: records.length,
       TotalAmount: items.reduce((sum, item) => sum + (item.Cost || 0), 0),
       CanSubmit: records.length > 0 && errors.length === 0,
+      BlockingErrors: blockingErrors,
       Errors: errors,
       Records: items,
     };
@@ -634,6 +791,9 @@ export class PaymentService {
     const records = await this.resolveLinkages(token, await this.listRecords(token, this.selectedFilter()));
     const approvalType = this.resolveApprovalType(records);
     const errors = this.validate(records, approvalType);
+    const definition = await this.approvalDefinition(token, approvalType);
+    const blockingErrors = this.requiredApprovalErrors(records, approvalType, definition, input);
+    if (blockingErrors.length) throw new HttpException(blockingErrors.join('\n'), HttpStatus.BAD_REQUEST);
     if (errors.length && input.allowValidationErrors !== true) throw new HttpException(errors.join('\n'), HttpStatus.BAD_REQUEST);
 
     const batchId = this.batchId();
@@ -688,7 +848,16 @@ export class PaymentService {
       const autoSubmitEnabled = approvalType === 'Cloud'
         ? Boolean(this.config.cloudApprovalCode)
         : approvalType === 'Corporate'
-          ? this.config.corporateAutoSubmitEnabled
+          ? [
+              this.config.corporateApprovalCode,
+              this.config.corporateWidgets.department,
+              this.config.corporateWidgets.contact,
+              this.config.corporateWidgets.reason,
+              this.config.corporateWidgets.detail,
+              this.config.corporateWidgets.amount,
+              this.config.corporateWidgets.method,
+              this.config.corporateWidgets.date,
+            ].every(Boolean)
           : Object.values(this.config.walletWidgets).every(Boolean);
       if (!autoSubmitEnabled) {
         const blocker = approvalType === 'Cloud'
@@ -726,7 +895,7 @@ export class PaymentService {
         }
         form = [
           { id: widgets.department, type: 'department', value: [{ open_id: this.config.walletDepartmentOpenId }] },
-          { id: widgets.contact, type: 'contact', value: [contactId] },
+          { id: widgets.contact, type: 'contact', open_ids: [contactId] },
           { id: widgets.reason, type: 'textarea', value: reason },
           { id: widgets.detail, type: 'attachmentV2', value: [detailCode] },
           { id: widgets.amount, type: 'amount', value: totalAmount, currency: 'CNY' },
@@ -737,6 +906,8 @@ export class PaymentService {
           form.splice(2, 0, { id: widgets.evidence, type: 'attachmentV2', value: evidenceCodes });
         }
       }
+      const missingRequiredFields = this.submittedFormErrors(definition, form);
+      if (missingRequiredFields.length) throw new Error(missingRequiredFields.join('\n'));
       const approvalCode = approvalType === 'Cloud'
         ? this.config.cloudApprovalCode
         : approvalType === 'Wallet'
@@ -764,14 +935,14 @@ export class PaymentService {
         BaseAmount: totalAmount,
       };
     } catch (error) {
+      const detail = this.friendlyApprovalError(error, definition);
       await this.updateRecords(token, recordIds, {
         '付款批次号': batchId,
         '批量提交状态': '校验失败',
-        '提交失败原因': `提审失败：${error instanceof Error ? error.message : String(error)}`,
+        '提交失败原因': detail,
         '申请付款选择框': true,
       }).catch(() => undefined);
-      const detail = error instanceof Error ? error.message : String(error);
-      throw new HttpException(`提审失败：${detail}`, HttpStatus.BAD_GATEWAY);
+      throw new HttpException(detail, HttpStatus.BAD_REQUEST);
     }
   }
 
