@@ -138,6 +138,52 @@ export class PaymentService {
     return null;
   }
 
+  private structuredLabel(value: unknown, preferredKeys: string[], depth = 0): string | null {
+    if (depth > 5 || value == null) return null;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+          return this.structuredLabel(JSON.parse(trimmed) as unknown, preferredKeys, depth + 1);
+        } catch {
+          return trimmed;
+        }
+      }
+      return trimmed;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const label = this.structuredLabel(item, preferredKeys, depth + 1);
+        if (label) return label;
+      }
+      return null;
+    }
+    if (typeof value !== 'object') return String(value);
+    const object = value as Record<string, unknown>;
+    for (const key of preferredKeys) {
+      if (key in object) {
+        const label = this.structuredLabel(object[key], preferredKeys, depth + 1);
+        if (label) return label;
+      }
+    }
+    for (const key of ['value', 'text']) {
+      if (key in object) {
+        const label = this.structuredLabel(object[key], preferredKeys, depth + 1);
+        if (label) return label;
+      }
+    }
+    return null;
+  }
+
+  private bankName(value: unknown): string | null {
+    return this.structuredLabel(value, ['bankNameZh', 'name', 'bankNameEn']);
+  }
+
+  private bankBranch(value: unknown): string | null {
+    return this.structuredLabel(value, ['bankBranchNameZh', 'name', 'bankBranchNameEn']);
+  }
+
   private approvalInstanceCode(value: unknown): string | null {
     const source = this.text(value);
     if (!source) return null;
@@ -186,8 +232,8 @@ export class PaymentService {
       status,
       accountName: this.text(fields['收款户名（插件解析）']),
       accountNumber: this.text(fields['收款账号（插件解析）']),
-      bankName: this.text(fields['开户银行（插件解析）']),
-      bankBranch: this.text(fields['开户支行（插件解析）']),
+      bankName: this.bankName(fields['开户银行（插件解析）']),
+      bankBranch: this.bankBranch(fields['开户支行（插件解析）']),
       province: this.text(fields['开户省（插件解析）']),
       city: this.text(fields['开户市（插件解析）']),
       accountType: this.text(fields['账户类型（插件解析）']),
@@ -243,8 +289,8 @@ export class PaymentService {
         status: '已解析',
         accountName: this.nestedText(account.widgetAccountName),
         accountNumber: this.nestedText(account.widgetAccountNumber),
-        bankName: this.nestedText(account.widgetAccountBankName),
-        bankBranch: this.nestedText(account.widgetAccountBankBranch),
+        bankName: this.bankName(account.widgetAccountBankName),
+        bankBranch: this.bankBranch(account.widgetAccountBankBranch),
         province: area.province,
         city: area.city,
         accountType: this.nestedText(account.widgetAccountType),
