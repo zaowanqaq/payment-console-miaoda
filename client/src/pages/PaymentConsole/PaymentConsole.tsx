@@ -173,9 +173,7 @@ function App() {
     }
   }, [isOAuthCallback, refresh])
 
-  const submitLabel = preview?.ExecutionMode === 'ManualPayment'
-    ? '登记付款形式'
-    : preview?.AutoSubmitEnabled
+  const submitLabel = preview?.AutoSubmitEnabled
       ? '确认发起审批'
       : '准备审批附件'
   const hasValidationErrors = Boolean(preview?.Errors.length)
@@ -357,20 +355,15 @@ function App() {
             </label>
           ) : null}
 
-          {preview?.ExecutionMode === 'ManualPayment' && preview?.RecordCount > 0 && (
-            <div className="account-notice">
-              <ShieldCheck size={18} />
-              <span>云账户支付仅作为付款形式提醒，不发起飞书审批；实际付款由人工完成。</span>
-            </div>
-          )}
-
           {preview?.ExecutionMode === 'Approval' && !preview?.AutoSubmitEnabled && preview?.RecordCount > 0 && (
             <div className="account-notice">
               <ShieldCheck size={18} />
               <span>
                 {preview.ApprovalType === 'Wallet'
                   ? '小荷包审批控件配置不完整，请检查审批定义后重试。'
-                  : '普通付款审批流程仍含银行账户必填控件，需先在审批流程中删除该控件。'}
+                  : preview.ApprovalType === 'Cloud'
+                    ? '云账户审批控件配置不完整，请检查审批定义后重试。'
+                    : '普通付款审批流程仍含 API 无法自动填写的必填控件（银行账户/关联合同），需先改为非必填或移除。'}
               </span>
             </div>
           )}
@@ -425,9 +418,7 @@ function App() {
             <h3>
               {allowValidationErrors && hasValidationErrors
                 ? '确认带问题提交'
-                : preview.ExecutionMode === 'ManualPayment'
-                  ? '确认登记付款形式'
-                  : preview.AutoSubmitEnabled
+                : preview.AutoSubmitEnabled
                     ? '确认发起付款审批'
                     : '确认准备审批'}
             </h3>
@@ -450,9 +441,7 @@ function App() {
       {submitting && (
         <div className="progress-dock">
           <LoaderCircle className="spin" size={19} />
-          <div><strong>正在处理付款批次</strong><span>{preview?.ExecutionMode === 'ManualPayment'
-            ? ['读取记录', '登记付款形式', '更新 Base', '完成', '完成'][Math.max(0, submitStage - 1)]
-            : ['读取记录', '生成明细', '上传附件', '发起审批', '回填 Base'][Math.max(0, submitStage - 1)]}</span></div>
+          <div><strong>正在处理付款批次</strong><span>{['读取记录', '生成明细', '上传附件', '发起审批', '回填 Base'][Math.max(0, submitStage - 1)]}</span></div>
           <div className="progress-track"><span style={{ width: `${Math.max(12, submitStage * 20)}%` }} /></div>
         </div>
       )}
@@ -462,7 +451,7 @@ function App() {
           <div className="dialog result-dialog" role="dialog" aria-modal="true">
             <button className="dialog-close" onClick={() => setResult(null)} title="关闭"><X size={17} /></button>
             <span className="dialog-icon success"><CheckCircle2 size={24} /></span>
-            <h3>{result.ExecutionMode === 'ManualPayment' ? '付款形式已登记' : result.Submitted ? '审批已发起' : '审批材料已准备'}</h3>
+            <h3>{result.Submitted ? '审批已发起' : '审批材料已准备'}</h3>
             <p>付款批次 {result.BatchId}</p>
             {result.InstanceCode && <code>{result.InstanceCode}</code>}
             {result.Blocker && <div className="result-note">{result.Blocker}</div>}

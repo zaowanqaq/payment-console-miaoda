@@ -25,30 +25,55 @@ export class PaymentConfig {
   readonly walletSyncTableId = required('WALLET_SYNC_TABLE_ID');
   readonly corporateApprovalCode = required('PROJECT_APPROVAL_CODE');
   readonly walletApprovalCode = required('WALLET_APPROVAL_CODE');
+  readonly cloudApprovalCode = optional('CLOUD_APPROVAL_CODE') || '8263DAB0-B756-4E8B-B436-F1E582C8BE5F';
+  readonly cloudWidgets = {
+    reason: optional('CLOUD_WIDGET_REASON_ID') || 'widget17228709591510001',
+    detail: optional('CLOUD_WIDGET_DETAIL_ATTACHMENT_ID') || 'widget17228697554950001',
+    settlement: optional('CLOUD_WIDGET_SETTLEMENT_ATTACHMENT_ID') || 'widget17511882355950001',
+    amount: optional('CLOUD_WIDGET_AMOUNT_ID') || 'widget17228709704020001',
+    date: optional('CLOUD_WIDGET_DATE_ID') || 'widget17319026392330001',
+  };
   readonly walletWidgets = {
     department: optional('WALLET_WIDGET_DEPARTMENT_ID') || 'widget17848854158820001',
     detail: optional('WALLET_WIDGET_DETAIL_ATTACHMENT_ID') || 'widget17848854208630001',
     amount: optional('WALLET_WIDGET_AMOUNT_ID') || 'widget17848854285820001',
     qr: optional('WALLET_WIDGET_QR_IMAGE_ID') || 'widget17848854409660001',
   };
-  readonly walletDepartmentOpenId = optional('WALLET_DEPARTMENT_OPEN_ID') || '7399527746871279619';
+  // 审批 department 控件要求 open_department_id（od-...）。历史线上配置曾写入
+  // 多维表格内部的数字 ID，会被 initiate 接口判定为“控件值不合法或为空”。
+  // 若环境变量不是有效的 open_department_id，回退到当前租户实际使用的部门。
+  readonly walletDepartmentOpenId = /^od-[\w-]+$/.test(optional('WALLET_DEPARTMENT_OPEN_ID'))
+    ? optional('WALLET_DEPARTMENT_OPEN_ID')
+    : 'od-fbaa82826fa4370666c21145fcea9bc0';
   readonly corporateWidgets = {
-    reason: optional('PROJECT_WIDGET_REASON_ID'),
-    detail: optional('PROJECT_WIDGET_DETAIL_ATTACHMENT_ID'),
-    evidence: optional('PROJECT_WIDGET_EVIDENCE_ATTACHMENT_ID'),
-    amount: optional('PROJECT_WIDGET_AMOUNT_ID'),
-    date: optional('PROJECT_WIDGET_DATE_ID'),
+    department: optional('PROJECT_WIDGET_DEPARTMENT_ID') || 'widget17848849503700001',
+    contact: optional('PROJECT_WIDGET_CONTACT_ID') || 'widget17848849874750001',
+    reason: optional('PROJECT_WIDGET_REASON_ID') || 'widget16510492382000001',
+    detail: optional('PROJECT_WIDGET_DETAIL_ATTACHMENT_ID') || 'widget16510493307470001',
+    evidence: optional('PROJECT_WIDGET_EVIDENCE_ATTACHMENT_ID') || 'widget17848851204670001',
+    amount: optional('PROJECT_WIDGET_AMOUNT_ID') || 'widget16510492513760001',
+    method: optional('PROJECT_WIDGET_METHOD_ID') || 'widget16510492719570001',
+    date: optional('PROJECT_WIDGET_DATE_ID') || 'widget16510493109960001',
+    contract: optional('PROJECT_WIDGET_CONTRACT_ID') || 'widget17848851037140001',
   };
+  readonly corporatePaymentMethodValue = optional('PROJECT_PAYMENT_METHOD_VALUE') || 'l2hc3vl4-s5t1j9v91vr-1';
+  // account/contract 控件无法由审批实例 API 自动填充。只有流程管理员确认已将它们
+  // 改为非必填（或移除）后，普通付款才允许插件直接提审。
+  readonly corporateAccountControlRequired = optional('PROJECT_ACCOUNT_CONTROL_REQUIRED') !== 'false';
+  readonly corporateContractControlRequired = optional('PROJECT_CONTRACT_CONTROL_REQUIRED') !== 'false';
   readonly corporateAutoSubmitEnabled = [
     this.corporateWidgets.reason,
     this.corporateWidgets.detail,
     this.corporateWidgets.amount,
     this.corporateWidgets.date,
+    this.corporateAccountControlRequired ? '' : 'account-control-removed',
+    this.corporateContractControlRequired ? '' : 'contract-control-removed',
   ].every(Boolean);
   readonly oauthRedirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI?.trim();
   readonly clientBasePath = process.env.CLIENT_BASE_PATH?.trim().replace(/\/$/, '') || '';
   readonly corporateApprovalLink = process.env.PROJECT_APPROVAL_LINK?.trim() || '';
   readonly walletApprovalLink = process.env.WALLET_APPROVAL_LINK?.trim() || '';
+  readonly cloudApprovalLink = process.env.CLOUD_APPROVAL_LINK?.trim() || '';
   readonly oauthScopes = [
     'auth:user.id:read',
     'offline_access',
