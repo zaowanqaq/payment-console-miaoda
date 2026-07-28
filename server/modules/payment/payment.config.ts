@@ -27,9 +27,12 @@ export class PaymentConfig {
   readonly walletApprovalCode = required('WALLET_APPROVAL_CODE');
   readonly cloudApprovalCode = optional('CLOUD_APPROVAL_CODE') || '2F29FCB6-ED2D-48AB-A064-C1C27FD4F988';
   readonly cloudWidgets = {
+    department: optional('CLOUD_WIDGET_DEPARTMENT_ID') || 'widget17848852798030001',
+    projectName: optional('CLOUD_WIDGET_PROJECT_NAME_ID') || 'widget17848852976180001',
+    projectCode: optional('CLOUD_WIDGET_PROJECT_CODE_ID') || 'widget17848853077220001',
+    entity: optional('CLOUD_WIDGET_ENTITY_ID') || 'widget17848853143530001',
     reason: optional('CLOUD_WIDGET_REASON_ID') || 'widget17228709591510001',
     detail: optional('CLOUD_WIDGET_DETAIL_ATTACHMENT_ID') || 'widget17228697554950001',
-    settlement: optional('CLOUD_WIDGET_SETTLEMENT_ATTACHMENT_ID') || 'widget17511882355950001',
     amount: optional('CLOUD_WIDGET_AMOUNT_ID') || 'widget17228709704020001',
     date: optional('CLOUD_WIDGET_DATE_ID') || 'widget17319026392330001',
   };

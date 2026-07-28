@@ -357,7 +357,7 @@ export class PaymentService {
     records: BaseRecord[],
     approvalType: ApprovalType,
     definition: ApprovalDefinition | null,
-    input?: { reason?: string; expectedPaymentDate?: string },
+    input?: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string },
   ): string[] {
     const errors: string[] = [];
     const totalAmount = records.reduce((sum, record) => sum + (this.number(record.fields['实际成本']) || 0), 0);
@@ -372,6 +372,18 @@ export class PaymentService {
         if (!contactId) errors.push(`审批必填项“${name}”无法自动带出，请检查关联项目的发起人。`);
       } else if (control.type === 'amount') {
         if (totalAmount <= 0) errors.push(`审批必填项“${name}”必须大于 0，请填写付款执行明细的实际成本。`);
+      } else if (control.type === 'input') {
+        const value = name === '项目名称'
+          ? this.text(records[0]?.fields['项目名称'])
+          : name === '项目编号'
+            ? this.text(records[0]?.fields['项目编号（自动带出）'])
+            : name === '承接主体'
+              ? input?.paymentEntity
+              : null;
+        const shouldValidate = name === '项目名称' || name === '项目编号' || (name === '承接主体' && Boolean(input));
+        if (shouldValidate && !value?.trim()) {
+          errors.push(`审批必填项“${name}”不能为空，请补充付款执行明细或提交设置。`);
+        }
       } else if (control.type === 'image' || control.type === 'imageV2') {
         const missing = records.filter((record) => !this.attachmentEntries(record.fields['收款二维码']).length);
         if (missing.length) errors.push(`审批必填项“${name}”缺少图片，请先在付款执行明细上传收款二维码。`);
@@ -610,7 +622,10 @@ export class PaymentService {
             ? '【测试】付款'
             : '待识别付款审批',
       AutoSubmitEnabled: blockingErrors.length === 0 && (approvalType === 'Cloud'
-        ? Boolean(this.config.cloudApprovalCode)
+        ? [
+            this.config.cloudApprovalCode,
+            ...Object.values(this.config.cloudWidgets),
+          ].every(Boolean)
         : approvalType === 'Corporate'
           ? [
               this.config.corporateApprovalCode,
@@ -846,7 +861,10 @@ export class PaymentService {
       });
 
       const autoSubmitEnabled = approvalType === 'Cloud'
-        ? Boolean(this.config.cloudApprovalCode)
+        ? [
+            this.config.cloudApprovalCode,
+            ...Object.values(this.config.cloudWidgets),
+          ].every(Boolean)
         : approvalType === 'Corporate'
           ? [
               this.config.corporateApprovalCode,
@@ -878,7 +896,19 @@ export class PaymentService {
 
       let form: Array<Record<string, unknown>>;
       if (approvalType === 'Cloud') {
-        form = [];
+        const widgets = this.config.cloudWidgets;
+        const projectName = this.text(records[0]?.fields['项目名称']);
+        const projectCode = this.text(records[0]?.fields['项目编号（自动带出）']);
+        form = [
+          { id: widgets.department, type: 'department', value: [{ open_id: this.config.walletDepartmentOpenId }] },
+          { id: widgets.projectName, type: 'input', value: projectName || '' },
+          { id: widgets.projectCode, type: 'input', value: projectCode || '' },
+          { id: widgets.entity, type: 'input', value: input.paymentEntity.trim() },
+          { id: widgets.reason, type: 'textarea', value: reason },
+          { id: widgets.detail, type: 'attachmentV2', value: [detailCode] },
+          { id: widgets.amount, type: 'amount', value: totalAmount, currency: 'CNY' },
+          { id: widgets.date, type: 'date', value: `${input.expectedPaymentDate}T00:00:00+08:00` },
+        ];
       } else if (approvalType === 'Wallet') {
         const widgets = this.config.walletWidgets;
         form = [
