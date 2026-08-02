@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleDollarSign,
+  ClipboardCheck,
   WalletCards,
   FileCheck2,
   Link2,
@@ -20,7 +21,7 @@ import {
 } from 'lucide-react'
 import { api } from './api'
 import { resolveBaseContext, subscribeToActiveTableChanges, type BaseContext } from './base-context'
-import type { BatchPreview, CurrentUser, SubmitResult } from './types'
+import type { BatchPreview, ClosurePreview, ClosureSubmitResult, CurrentUser, SubmitResult } from './types'
 import './payment-console.css'
 
 function defaultPaymentDate() {
@@ -53,11 +54,14 @@ function EmptyState({ message }: { message: string }) {
 
 function App() {
   const oauthParams = new URLSearchParams(window.location.search)
+  const isDemo = oauthParams.has('demo')
   const isOAuthCallback = oauthParams.has('code') && oauthParams.has('state')
   const [oauthStatus, setOAuthStatus] = useState<'working' | 'done' | 'error'>('working')
   const [oauthError, setOAuthError] = useState('')
   const [authorizationPending, setAuthorizationPending] = useState(false)
+  const [mode, setMode] = useState<'payment' | 'closure'>('payment')
   const [preview, setPreview] = useState<BatchPreview | null>(null)
+  const [closurePreview, setClosurePreview] = useState<ClosurePreview | null>(null)
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [baseContext, setBaseContext] = useState<BaseContext>({ embedded: false })
   const [loading, setLoading] = useState(true)
@@ -68,13 +72,23 @@ function App() {
   const [allowValidationErrors, setAllowValidationErrors] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitStage, setSubmitStage] = useState(0)
-  const [result, setResult] = useState<SubmitResult | null>(null)
+  const [result, setResult] = useState<SubmitResult | ClosureSubmitResult | null>(null)
+  const [closureForm, setClosureForm] = useState({
+    projectName: '',
+    projectCode: '',
+    projectStatus: '已验收待开票',
+    paymentEntity: '',
+    recipientEntity: '其他',
+    amount: '',
+    contractNumber: '',
+  })
   const [qrFile, setQrFile] = useState<File | null>(null)
   const [supportingFiles, setSupportingFiles] = useState<File[]>([])
   const captureRef = useRef<HTMLDivElement | null>(null)
   const refreshPromiseRef = useRef<Promise<void> | null>(null)
   const loadedOnceRef = useRef(false)
   const submittingRef = useRef(false)
+  const closureDefaultsKeyRef = useRef('')
 
   const refresh = useCallback((options: { sync?: boolean; showLoading?: boolean } = {}) => {
     if (refreshPromiseRef.current) return refreshPromiseRef.current
@@ -91,18 +105,38 @@ function App() {
         setBaseContext(context)
         if (!nextUser.authorized) {
           setPreview(null)
+          setClosurePreview(null)
           return
         }
         if (options.sync) await api.sync().catch(() => undefined)
-        const nextPreview = await api.preview(context)
-        setPreview(nextPreview)
-        setReason((current) => {
-          if (current || nextPreview.RecordCount === 0) return current
-          const project = nextPreview.Records[0]?.ProjectName
-          return project ? `${project}付款` : '项目费用付款'
-        })
+        if (mode === 'closure') {
+          const nextPreview = await api.closurePreview(context)
+          setClosurePreview(nextPreview)
+          const record = nextPreview.Records[0]
+          const defaultsKey = record?.RecordId || ''
+          if (record && closureDefaultsKeyRef.current !== defaultsKey) {
+            closureDefaultsKeyRef.current = defaultsKey
+            setClosureForm({
+              projectName: record.ProjectName || '',
+              projectCode: record.ProjectCode || '',
+              projectStatus: record.ProjectStatus || '已验收待开票',
+              paymentEntity: record.PaymentEntity || '',
+              recipientEntity: record.RecipientEntity || '其他',
+              amount: record.Amount == null ? '' : String(record.Amount),
+              contractNumber: record.ContractNumber || '',
+            })
+          }
+        } else {
+          const nextPreview = await api.preview(context)
+          setPreview(nextPreview)
+          setReason((current) => {
+            if (current || nextPreview.RecordCount === 0) return current
+            const project = nextPreview.Records[0]?.ProjectName
+            return project ? `${project}付款` : '项目费用付款'
+          })
+        }
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : '读取付款明细失败')
+        setError(cause instanceof Error ? cause.message : mode === 'closure' ? '读取结项申请失败' : '读取付款明细失败')
       } finally {
         loadedOnceRef.current = true
         if (showLoading) setLoading(false)
@@ -113,7 +147,7 @@ function App() {
       refreshPromiseRef.current = null
     })
     return refreshPromiseRef.current
-  }, [])
+  }, [mode])
 
   useEffect(() => {
     if (isOAuthCallback) {
@@ -188,6 +222,10 @@ function App() {
     }
   }, [isOAuthCallback, refresh])
 
+  useEffect(() => {
+    if (!isOAuthCallback && loadedOnceRef.current) void refresh({ showLoading: true })
+  }, [isOAuthCallback, mode, refresh])
+
   const submitLabel = '生成材料并发起审批'
   const hasValidationErrors = Boolean(preview?.Errors.length)
   const hasBlockingErrors = Boolean(preview?.BlockingErrors.length)
@@ -203,6 +241,17 @@ function App() {
     [preview],
   )
   const selectedRecordKey = preview?.Records.map((record) => record.RecordId).join('|') || ''
+  const closureReady = Boolean(
+    closurePreview?.CanSubmit
+    && closureForm.projectName.trim()
+    && closureForm.projectCode.trim()
+    && closureForm.projectStatus
+    && closureForm.paymentEntity.trim()
+    && closureForm.recipientEntity
+    && Number(closureForm.amount) > 0
+    && closureForm.contractNumber.trim()
+    && !submitting,
+  )
 
   useEffect(() => {
     setQrFile(null)
@@ -258,6 +307,34 @@ function App() {
     }
   }
 
+  async function submitClosure() {
+    setSubmitting(true)
+    submittingRef.current = true
+    setSubmitStage(1)
+    const timer = window.setInterval(() => setSubmitStage((stage) => Math.min(stage + 1, 4)), 900)
+    try {
+      const nextResult = await api.submitClosure({
+        projectName: closureForm.projectName,
+        projectCode: closureForm.projectCode,
+        projectStatus: closureForm.projectStatus,
+        paymentEntity: closureForm.paymentEntity,
+        recipientEntity: closureForm.recipientEntity,
+        amount: Number(closureForm.amount),
+        contractNumber: closureForm.contractNumber,
+      })
+      setSubmitStage(5)
+      setResult(nextResult)
+      closureDefaultsKeyRef.current = ''
+      void refresh()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '项目结项提审失败')
+    } finally {
+      window.clearInterval(timer)
+      setSubmitting(false)
+      submittingRef.current = false
+    }
+  }
+
   return (
     <div className={`app-shell ${baseContext.embedded ? 'embedded-shell' : ''}`}>
       {error && (
@@ -277,9 +354,17 @@ function App() {
           </div>
         </div>
         <div className="header-actions">
+          <div className="mode-switch" aria-label="业务流程切换">
+            <button className={mode === 'payment' ? 'active' : ''} onClick={() => setMode('payment')}>
+              <CircleDollarSign size={14} />付款
+            </button>
+            <button className={mode === 'closure' ? 'active' : ''} onClick={() => setMode('closure')}>
+              <ClipboardCheck size={14} />项目结项
+            </button>
+          </div>
           <div className="context-pill">
             <Link2 size={14} />
-            {baseContext.embedded ? '已连接当前 Base' : '本地联调'}
+            {isDemo ? '演示模式 · 脱敏数据' : baseContext.embedded ? '已连接当前 Base' : '本地联调'}
           </div>
           <button className="icon-button" onClick={() => void refresh({ sync: true })} disabled={loading || refreshing} title="刷新">
             <RefreshCw size={17} className={loading || refreshing ? 'spin' : ''} />
@@ -295,6 +380,7 @@ function App() {
       </header>
 
       <main className="workspace">
+        {mode === 'payment' ? <>
         <section className="records-pane">
           <div className="section-heading">
             <div>
@@ -475,9 +561,113 @@ function App() {
             </button>}
           </div>
         </aside>
+        </> : <>
+          <section className="records-pane closure-records-pane">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">结项留档</span>
+                <h2>待发起项目</h2>
+              </div>
+              <div className="batch-meta">
+                <div><strong>{closurePreview?.RecordCount ?? 0}</strong><span>条勾选</span></div>
+                <div><strong>{money(closurePreview?.Records[0]?.Amount)}</strong><span>项目金额</span></div>
+                <div><strong>{closurePreview?.DefinitionName || '【测试】项目结项'}</strong><span>审批定义</span></div>
+              </div>
+            </div>
+
+            <div className="records-table-wrap">
+              {loading ? (
+                <div className="loading-state"><LoaderCircle className="spin" /><span>正在核对结项申请</span></div>
+              ) : closurePreview?.Records.length ? (
+                <table className="records-table closure-table">
+                  <thead>
+                    <tr>
+                      <th>执行明细</th>
+                      <th>关联项目</th>
+                      <th>合同编号</th>
+                      <th className="number-cell">项目金额</th>
+                      <th aria-label="校验结果" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {closurePreview.Records.map((record) => {
+                      const valid = record.Errors.length === 0
+                      return (
+                        <tr key={record.RecordId} className={valid ? '' : 'row-invalid'}>
+                          <td><strong className="record-name">{record.Name}</strong><span className="record-sub">结项审批留档</span></td>
+                          <td><span className="primary-text">{record.ProjectName || '未关联项目'}</span><span className="record-sub">{record.ProjectCode || '未带出项目编号'}</span></td>
+                          <td><span className="primary-text">{record.ContractNumber || '待补充'}</span></td>
+                          <td className="number-cell"><strong>{money(record.Amount)}</strong></td>
+                          <td>
+                            <span className={valid ? 'result-icon valid' : 'result-icon invalid'} title={record.Errors.join('\n')}>
+                              {valid ? <Check size={15} /> : <AlertCircle size={15} />}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              ) : <EmptyState message="请在付款执行明细中勾选“申请结项选择框”" />}
+            </div>
+          </section>
+
+          <aside className="submit-pane">
+            <div className="panel-heading">
+              <div><ClipboardCheck size={17} /><h2>结项信息</h2></div>
+              <span className={closurePreview?.CanSubmit ? 'readiness ready' : 'readiness blocked'}>
+                {closurePreview?.CanSubmit ? '校验通过' : `${closurePreview?.BlockingErrors.length ?? 0} 项待处理`}
+              </span>
+            </div>
+
+            <div className="validation-summary">
+              <div className="validation-title">
+                {closurePreview?.CanSubmit ? <CheckCircle2 size={19} /> : <AlertCircle size={19} />}
+                <strong>{closurePreview?.CanSubmit ? '可发起结项审批' : '结项申请暂不可提交'}</strong>
+              </div>
+              <span>当前仅支持每次勾选一条执行明细；无需上传材料。</span>
+              {closurePreview?.BlockingErrors.slice(0, 4).map((item) => <p key={item}>{item}</p>)}
+            </div>
+
+            <div className="form-stack closure-form">
+              <label><span>项目名称</span><input value={closureForm.projectName} onChange={(event) => setClosureForm((form) => ({ ...form, projectName: event.target.value }))} /></label>
+              <label><span>项目编号</span><input value={closureForm.projectCode} onChange={(event) => setClosureForm((form) => ({ ...form, projectCode: event.target.value }))} /></label>
+              <label>
+                <span>项目状态</span>
+                <select value={closureForm.projectStatus} onChange={(event) => setClosureForm((form) => ({ ...form, projectStatus: event.target.value }))}>
+                  {(closurePreview?.ProjectStatusOptions || ['已验收待开票']).map((option) => <option key={option}>{option}</option>)}
+                </select>
+              </label>
+              <label><span>付款主体</span><input value={closureForm.paymentEntity} onChange={(event) => setClosureForm((form) => ({ ...form, paymentEntity: event.target.value }))} placeholder="默认从立项审批的下单主体带出" /></label>
+              <label>
+                <span>收款主体</span>
+                <select value={closureForm.recipientEntity} onChange={(event) => setClosureForm((form) => ({ ...form, recipientEntity: event.target.value }))}>
+                  {(closurePreview?.RecipientEntityOptions || ['新枝', '火勺', '游鸟', '其他']).map((option) => <option key={option}>{option}</option>)}
+                </select>
+              </label>
+              <label><span>项目金额</span><input type="number" min="0.01" step="0.01" value={closureForm.amount} onChange={(event) => setClosureForm((form) => ({ ...form, amount: event.target.value }))} /></label>
+              <label><span>合同编号</span><input value={closureForm.contractNumber} onChange={(event) => setClosureForm((form) => ({ ...form, contractNumber: event.target.value }))} placeholder="从付款执行明细带出，可补充" /></label>
+            </div>
+
+            <div className="submit-footer">
+              <div className="initiator-line"><UserRound size={15} /><span>发起人</span><strong>{user?.name || '未识别'}</strong></div>
+              {!user?.authorized && user?.authorizeUrl ? (
+                <a className="primary-button" href={user.authorizeUrl} target="_blank" rel="opener" onClick={() => setAuthorizationPending(true)}>
+                  <ShieldCheck size={18} />{authorizationPending ? '等待授权完成' : '授权飞书后继续'}<ChevronRight size={17} />
+                </a>
+              ) : (
+                <button className="primary-button" disabled={!closureReady} onClick={() => void submitClosure()}>
+                  {submitting ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}
+                  {submitting ? '正在发起' : '发起项目结项审批'}
+                  {!submitting && <ChevronRight size={17} />}
+                </button>
+              )}
+            </div>
+          </aside>
+        </>}
       </main>
 
-      {preview && (
+      {mode === 'payment' && preview && (
         <div className="capture-stage" aria-hidden="true">
           <div className="capture-sheet" ref={captureRef}>
             <div className="capture-header">
@@ -550,7 +740,12 @@ function App() {
       {submitting && (
         <div className="progress-dock">
           <LoaderCircle className="spin" size={19} />
-          <div><strong>正在处理付款批次</strong><span>{['生成明细截图', '上传截图与附件', '组装审批表单', '发起审批', '回填 Base'][Math.max(0, submitStage - 1)]}</span></div>
+          <div>
+            <strong>{mode === 'closure' ? '正在处理项目结项' : '正在处理付款批次'}</strong>
+            <span>{(mode === 'closure'
+              ? ['校验结项信息', '组装审批表单', '发起审批', '读取审批编号', '回填 Base']
+              : ['生成明细截图', '上传截图与附件', '组装审批表单', '发起审批', '回填 Base'])[Math.max(0, submitStage - 1)]}</span>
+          </div>
           <div className="progress-track"><span style={{ width: `${Math.max(12, submitStage * 20)}%` }} /></div>
         </div>
       )}
@@ -560,13 +755,14 @@ function App() {
           <div className="dialog result-dialog" role="dialog" aria-modal="true">
             <button className="dialog-close" onClick={() => setResult(null)} title="关闭"><X size={17} /></button>
             <span className="dialog-icon success"><CheckCircle2 size={24} /></span>
-            <h3>{result.Submitted ? '审批已发起' : '审批材料已准备'}</h3>
-            <p>付款批次 {result.BatchId}</p>
+            <h3>审批已发起</h3>
+            <p>{result.Action === 'ClosureSubmit' ? `项目结项 ${result.SerialNumber || result.ClosureId}` : `付款批次 ${result.BatchId}`}</p>
             {result.InstanceCode && <code>{result.InstanceCode}</code>}
-            {result.Blocker && <div className="result-note">{result.Blocker}</div>}
+            {result.Action === 'Submit' && result.Blocker && <div className="result-note">{result.Blocker}</div>}
+            {result.Action === 'Submit' && result.Next && <div className="result-note demo-result-note">{result.Next}</div>}
             <div className="dialog-actions single">
-              {(result.InstanceLink || result.ApprovalLink) && (
-                <a className="primary-button compact" href={result.InstanceLink || result.ApprovalLink} target="_blank" rel="noreferrer">
+              {(result.InstanceLink || (result.Action === 'Submit' && result.ApprovalLink)) && (
+                <a className="primary-button compact" href={result.InstanceLink || (result.Action === 'Submit' ? result.ApprovalLink : undefined)} target="_blank" rel="noreferrer">
                   打开审批<ArrowUpRight size={17} />
                 </a>
               )}

@@ -1,6 +1,6 @@
 import type { BaseContext } from './base-context'
-import type { BatchPreview, CurrentUser, SubmitResult } from './types'
-import { demoPreview } from './demo'
+import type { BatchPreview, ClosurePreview, ClosureSubmitInput, ClosureSubmitResult, CurrentUser, SubmitResult } from './types'
+import { demoClosurePreview, demoPreview } from './demo'
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -39,7 +39,7 @@ export const api = {
     return result
   },
   currentUser: () => new URLSearchParams(window.location.search).has('demo')
-    ? Promise.resolve<CurrentUser>({ name: '早晚', openId: 'demo', authMode: 'oauth', verified: true, authorized: true })
+    ? Promise.resolve<CurrentUser>({ name: '演示用户', openId: 'demo', authMode: 'oauth', verified: true, authorized: true })
     : request<CurrentUser>('/api/auth/me'),
   preview: (context: BaseContext) => new URLSearchParams(window.location.search).has('demo')
     ? Promise.resolve(demoPreview)
@@ -47,10 +47,30 @@ export const api = {
       tableId: context.tableId || '',
       viewId: context.viewId || '',
     })}`),
+  closurePreview: (context: BaseContext) => new URLSearchParams(window.location.search).has('demo')
+    ? Promise.resolve(demoClosurePreview)
+    : request<ClosurePreview>(`/api/closures/preview?${new URLSearchParams({
+      tableId: context.tableId || '',
+      viewId: context.viewId || '',
+    })}`),
   submit: (
     input: { reason: string; paymentEntity: string; expectedPaymentDate: string; allowValidationErrors: boolean },
     files: { detailScreenshot: File; qrFile?: File | null; supportingFiles?: File[] },
   ) => {
+    if (new URLSearchParams(window.location.search).has('demo')) {
+      return Promise.resolve<SubmitResult>({
+        Action: 'Submit',
+        BatchId: 'DEMO-20260731-001',
+        ApprovalType: 'Cloud',
+        ExecutionMode: 'Approval',
+        Submitted: true,
+        InstanceCode: 'demo-instance-7f3c2d91',
+        RecordCount: demoPreview.RecordCount,
+        BaseAmount: demoPreview.TotalAmount,
+        AmountWithServiceFee: demoPreview.ApprovalAmount,
+        Next: '演示模式：已模拟生成审批实例，并回填审批编号、链接和状态字段。',
+      })
+    }
     const body = new FormData()
     body.append('payload', JSON.stringify({ ...input, confirmed: true }))
     body.append('detailScreenshot', files.detailScreenshot)
@@ -61,6 +81,20 @@ export const api = {
       body,
     })
   },
+  submitClosure: (input: ClosureSubmitInput) => new URLSearchParams(window.location.search).has('demo')
+    ? Promise.resolve<ClosureSubmitResult>({
+      Action: 'ClosureSubmit',
+      ClosureId: 'CLOSE-DEMO-20260731-001',
+      Submitted: true,
+      InstanceCode: 'demo-closure-instance-7f3c2d91',
+      InstanceLink: 'https://example.com/demo-closure',
+      SerialNumber: '202607310099',
+      RecordCount: 1,
+    })
+    : request<ClosureSubmitResult>('/api/closures/submit', {
+      method: 'POST',
+      body: JSON.stringify({ ...input, confirmed: true }),
+    }),
   sync: () => new URLSearchParams(window.location.search).has('demo')
     ? Promise.resolve({ ok: true })
     : request<unknown>('/api/approvals/sync', {

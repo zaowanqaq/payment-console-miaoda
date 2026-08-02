@@ -41,6 +41,12 @@ export class PaymentController {
     return this.payment.preview(req, res, tableId);
   }
 
+  @Get('closures/preview')
+  @NeedLogin()
+  closurePreview(@Req() req: Request, @Res({ passthrough: true }) res: Response, @Query('tableId') tableId?: string) {
+    return this.payment.closurePreview(req, res, tableId);
+  }
+
   @Post('batches/submit')
   @NeedLogin()
   @UseInterceptors(AnyFilesInterceptor({
@@ -59,6 +65,25 @@ export class PaymentController {
       throw new BadRequestException('提交参数格式不正确');
     }
     return this.payment.submit(req, res, payload, files);
+  }
+
+  @Post('closures/submit')
+  @NeedLogin()
+  closureSubmit(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body() body: {
+      projectName?: string;
+      projectCode?: string;
+      projectStatus?: string;
+      paymentEntity?: string;
+      recipientEntity?: string;
+      amount?: number;
+      contractNumber?: string;
+      confirmed?: boolean;
+    },
+  ) {
+    return this.payment.closureSubmit(req, res, body);
   }
 
   @Post('approvals/sync')

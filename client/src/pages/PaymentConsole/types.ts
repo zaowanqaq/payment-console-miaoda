@@ -80,3 +80,47 @@ export type SubmitResult = {
   RequiresManualPayment?: boolean
   Next?: string
 }
+
+export type ClosureRecord = {
+  RecordId: string
+  Name: string
+  ProjectName: string | null
+  ProjectCode: string | null
+  ProjectStatus: string
+  PaymentEntity: string | null
+  RecipientEntity: string
+  Amount: number | null
+  ContractNumber: string | null
+  Errors: string[]
+}
+
+export type ClosurePreview = {
+  Action: 'ClosurePreview'
+  DefinitionName: string
+  RecordCount: number
+  CanSubmit: boolean
+  BlockingErrors: string[]
+  Records: ClosureRecord[]
+  ProjectStatusOptions: string[]
+  RecipientEntityOptions: string[]
+}
+
+export type ClosureSubmitInput = {
+  projectName: string
+  projectCode: string
+  projectStatus: string
+  paymentEntity: string
+  recipientEntity: string
+  amount: number
+  contractNumber: string
+}
+
+export type ClosureSubmitResult = {
+  Action: 'ClosureSubmit'
+  ClosureId: string
+  Submitted: true
+  InstanceCode: string
+  InstanceLink: string
+  SerialNumber?: string | null
+  RecordCount: 1
+}
