@@ -337,9 +337,10 @@ export class PaymentService {
   private resolveApprovalType(records: BaseRecord[]): ApprovalType {
     const methods = [...new Set(records.map((record) => this.paymentMethod(record)).filter(Boolean))];
     if (methods.length !== 1) return 'Unknown';
-    if (methods[0] === '云账户支付') return records.length === 1 ? 'CloudSingle' : 'Cloud';
-    if (methods[0] === '小荷包支付') return 'Wallet';
-    if (methods[0] === '对公支付') return 'Corporate';
+    if (methods[0] === '云账户批量') return 'Cloud';
+    if (methods[0] === '云账户单人') return 'CloudSingle';
+    if (methods[0] === '小荷包') return 'Wallet';
+    if (methods[0] === '付款') return 'Corporate';
     return 'Unknown';
   }
 
@@ -357,12 +358,12 @@ export class PaymentService {
     if (!this.hasOption(record.fields['付款进度'], ['已对账'])) errors.push(`${name}：付款进度必须为已对账。`);
     const cost = this.number(record.fields['实际成本']);
     if (cost == null || cost <= 0) errors.push(`${name}：实际成本必须大于 0。`);
-    if (this.resolveApprovalType([record]) === 'Unknown') errors.push(`${name}：资源入库未带出有效付款形式。`);
+    if (this.resolveApprovalType([record]) === 'Unknown') errors.push(`${name}：付款形式尚未选择或无法识别。`);
     const linkageError = this.text(record.fields['校验错误']);
     if (linkageError) errors.push(...linkageError.split('\n').filter(Boolean));
     const selectedPayment = this.paymentMethod(record);
-    if (!['对公支付', '小荷包支付', '云账户支付'].includes(selectedPayment)) errors.push(`${name}：关联资源未自动带出有效付款形式。`);
-    if (selectedPayment === '对公支付') {
+    if (!['付款', '小荷包', '云账户批量', '云账户单人'].includes(selectedPayment)) errors.push(`${name}：请选择有效付款形式。`);
+    if (selectedPayment === '付款') {
       const accountStatus = this.text(record.fields['账户校验状态（自动带出）']);
       const province = this.text(record.fields['开户省（自动带出）']);
       const city = this.text(record.fields['开户市（自动带出）']);
@@ -378,6 +379,7 @@ export class PaymentService {
     const approvalTypes = [...new Set(records.map((record) => this.resolveApprovalType([record])))];
     if (approvalTypes.length !== 1) errors.push('不同付款方式不能混合提审。');
     if (approvalType === 'Unknown') errors.push('付款形式为空、未识别或同一批次包含多种付款形式。');
+    if (approvalType === 'CloudSingle' && records.length !== 1) errors.push('云账户单人付款每次只能勾选一条付款明细。');
     if (approvalType === 'Corporate') {
       const payeeKeys = [...new Set(records.map((record) => [
         this.normalized(record.fields['收款户名（自动带出）']),
@@ -753,7 +755,6 @@ export class PaymentService {
         '项目名称': projectRecord?.fields['项目名称'] ?? record.fields['项目名称'],
         '资源账号（自动带出）': resourceRecord?.fields['资源代称'] ?? record.fields['资源账号（自动带出）'],
         '收款人（自动带出）': resourceRecord?.fields['真实姓名'] ?? record.fields['收款人（自动带出）'],
-        '付款形式': resourceRecord?.fields['资源支付形式'] ?? record.fields['付款形式'],
         '银行卡号（自动带出）': resourceRecord?.fields['银行卡号'] ?? record.fields['银行卡号（自动带出）'],
         '身份证号（自动带出）': resourceRecord?.fields['身份证号'],
         '联系电话（自动带出）': resourceRecord?.fields['联系电话'],
@@ -1328,7 +1329,7 @@ export class PaymentService {
     const paymentEntity = input.paymentEntity?.trim() || '';
     if (!paymentEntity) throw new HttpException('付款主体不能为空，请手动填写后再提交。', HttpStatus.BAD_REQUEST);
     const reason = `${input.reason.trim()} [${batchId}]`;
-    if (approvalType === 'Unknown') throw new HttpException('付款形式无法从关联资源自动带出，请先关联资源入库审批。', HttpStatus.BAD_REQUEST);
+    if (approvalType === 'Unknown') throw new HttpException('付款形式尚未选择、无法识别或同一批次选择不一致。', HttpStatus.BAD_REQUEST);
     const definitionName = this.expectedDefinitionName(approvalType);
     const approvalLink = approvalType === 'CloudSingle'
       ? this.config.cloudSingleApprovalLink
