@@ -26,6 +26,7 @@ export type BatchRecord = {
   ResourceAccount: string | null;
   Recipient: string | null;
   PaymentMethod: string | null;
+  PaymentProgress: string | null;
   Cost: number | null;
   AcceptanceStatus: string | null;
   ContractStatus: string | null;
@@ -59,7 +60,7 @@ export type RequiredUpload = {
 
 export type BatchPreview = {
   Action: 'Preview';
-  ApprovalType: 'Cloud' | 'Corporate' | 'Wallet' | 'Unknown';
+  ApprovalType: 'Cloud' | 'CloudSingle' | 'Corporate' | 'Wallet' | 'Unknown';
   ExecutionMode: 'Approval' | 'ManualPayment';
   DefinitionName: string;
   AutoSubmitEnabled: boolean;
@@ -71,6 +72,7 @@ export type BatchPreview = {
   BlockingErrors: string[];
   Errors: string[];
   RequiredUploads: RequiredUpload[];
+  PaymentEntityOptions: string[];
   Records: BatchRecord[];
 };
 

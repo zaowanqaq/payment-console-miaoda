@@ -14,6 +14,7 @@ export const demoPreview: BatchPreview = {
   BlockingErrors: [],
   Errors: [],
   RequiredUploads: [],
+  PaymentEntityOptions: [],
   Records: [
     {
       RecordId: 'demo-001',
@@ -24,6 +25,7 @@ export const demoPreview: BatchPreview = {
       ResourceAccount: '星河内容工作室',
       Recipient: '林晓楠',
       PaymentMethod: '平台代付',
+      PaymentProgress: '已对账',
       Cost: 6800,
       AcceptanceStatus: '已验收',
       ContractStatus: '已签署',
@@ -54,6 +56,7 @@ export const demoPreview: BatchPreview = {
       ResourceAccount: '星河内容工作室',
       Recipient: '林晓楠',
       PaymentMethod: '平台代付',
+      PaymentProgress: '已对账',
       Cost: 7200,
       AcceptanceStatus: '已验收',
       ContractStatus: '已签署',
@@ -84,6 +87,7 @@ export const demoPreview: BatchPreview = {
       ResourceAccount: '星河内容工作室',
       Recipient: '林晓楠',
       PaymentMethod: '平台代付',
+      PaymentProgress: '已对账',
       Cost: 4650,
       AcceptanceStatus: '已验收',
       ContractStatus: '无需合同',

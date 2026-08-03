@@ -55,7 +55,7 @@ export const api = {
     })}`),
   submit: (
     input: { reason: string; paymentEntity: string; expectedPaymentDate: string; allowValidationErrors: boolean },
-    files: { detailScreenshot: File; qrFile?: File | null; supportingFiles?: File[] },
+    files: { detailScreenshot: File; qrFile?: File | null; invoiceFiles?: File[]; supportingFiles?: File[] },
   ) => {
     if (new URLSearchParams(window.location.search).has('demo')) {
       return Promise.resolve<SubmitResult>({
@@ -75,6 +75,7 @@ export const api = {
     body.append('payload', JSON.stringify({ ...input, confirmed: true }))
     body.append('detailScreenshot', files.detailScreenshot)
     if (files.qrFile) body.append('qrFile', files.qrFile)
+    for (const file of files.invoiceFiles || []) body.append('invoiceFiles', file)
     for (const file of files.supportingFiles || []) body.append('supportingFiles', file)
     return request<SubmitResult>('/api/batches/submit', {
       method: 'POST',

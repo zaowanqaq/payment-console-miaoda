@@ -68,6 +68,7 @@ function App() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
   const [reason, setReason] = useState('')
+  const [paymentEntity, setPaymentEntity] = useState('')
   const [expectedPaymentDate, setExpectedPaymentDate] = useState(defaultPaymentDate)
   const [allowValidationErrors, setAllowValidationErrors] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -83,12 +84,14 @@ function App() {
     contractNumber: '',
   })
   const [qrFile, setQrFile] = useState<File | null>(null)
+  const [invoiceFiles, setInvoiceFiles] = useState<File[]>([])
   const [supportingFiles, setSupportingFiles] = useState<File[]>([])
   const captureRef = useRef<HTMLDivElement | null>(null)
   const refreshPromiseRef = useRef<Promise<void> | null>(null)
   const loadedOnceRef = useRef(false)
   const submittingRef = useRef(false)
   const closureDefaultsKeyRef = useRef('')
+  const paymentDefaultsKeyRef = useRef('')
 
   const refresh = useCallback((options: { sync?: boolean; showLoading?: boolean } = {}) => {
     if (refreshPromiseRef.current) return refreshPromiseRef.current
@@ -129,6 +132,15 @@ function App() {
         } else {
           const nextPreview = await api.preview(context)
           setPreview(nextPreview)
+          const defaultsKey = nextPreview.Records.map((record) => record.RecordId).join('|')
+          if (paymentDefaultsKeyRef.current !== defaultsKey) {
+            paymentDefaultsKeyRef.current = defaultsKey
+            const currentEntity = nextPreview.Records[0]?.PaymentEntity || ''
+            const normalizedEntity = ['新枝', '火勺', '游鸟'].includes(currentEntity)
+              ? '新枝/火勺/游鸟'
+              : currentEntity
+            setPaymentEntity(normalizedEntity)
+          }
           setReason((current) => {
             if (current || nextPreview.RecordCount === 0) return current
             const project = nextPreview.Records[0]?.ProjectName
@@ -229,13 +241,9 @@ function App() {
   const submitLabel = '生成材料并发起审批'
   const hasValidationErrors = Boolean(preview?.Errors.length)
   const hasBlockingErrors = Boolean(preview?.BlockingErrors.length)
-  const paymentEntity = preview?.Records[0]?.PaymentEntity || ''
   const requiredQr = Boolean(preview?.RequiredUploads.some((upload) => upload.Key === 'qr' && upload.Required))
-  const requiredSupporting = Boolean(preview?.RequiredUploads.some(
-    (upload) => upload.Key === 'supporting' && upload.Required && !upload.SatisfiedByBase,
-  ))
-  const uploadsReady = (!requiredQr || Boolean(qrFile)) && (!requiredSupporting || supportingFiles.length > 0)
-  const isReady = Boolean(preview?.RecordCount && !hasBlockingErrors && uploadsReady && (preview.CanSubmit || allowValidationErrors) && reason.trim() && expectedPaymentDate && !submitting)
+  const uploadsReady = !requiredQr || Boolean(qrFile)
+  const isReady = Boolean(preview?.RecordCount && !hasBlockingErrors && uploadsReady && (preview.CanSubmit || allowValidationErrors) && reason.trim() && paymentEntity.trim() && expectedPaymentDate && !submitting)
   const rowErrorCount = useMemo(
     () => preview?.Records.filter((record) => record.Errors.length > 0).length ?? 0,
     [preview],
@@ -255,6 +263,7 @@ function App() {
 
   useEffect(() => {
     setQrFile(null)
+    setInvoiceFiles([])
     setSupportingFiles([])
   }, [selectedRecordKey])
 
@@ -291,11 +300,12 @@ function App() {
       const screenshot = new File([screenshotBlob], '付款执行明细.png', { type: 'image/png' })
       const nextResult = await api.submit(
         { reason, paymentEntity, expectedPaymentDate, allowValidationErrors },
-        { detailScreenshot: screenshot, qrFile, supportingFiles },
+        { detailScreenshot: screenshot, qrFile, invoiceFiles, supportingFiles },
       )
       setSubmitStage(5)
       setResult(nextResult)
       setQrFile(null)
+      setInvoiceFiles([])
       setSupportingFiles([])
       void refresh()
     } catch (cause) {
@@ -411,7 +421,7 @@ function App() {
                   <tr>
                     <th>明细</th>
                     <th>项目 / 资源</th>
-                    <th>付款条件</th>
+                    <th>付款状态</th>
                     <th>附件</th>
                     <th className="number-cell">实际成本</th>
                     <th aria-label="校验结果" />
@@ -433,8 +443,8 @@ function App() {
                           </span>
                         </td>
                         <td>
-                          <div className="condition-line"><StatusDot valid={record.AcceptanceStatus === '已验收'} />{record.AcceptanceStatus || '待验收'}</div>
-                          <div className="condition-line"><StatusDot valid={['已签署', '无需合同'].includes(record.ContractStatus || '')} />{record.ContractStatus || '合同未填写'}</div>
+                          <div className="condition-line"><StatusDot valid={record.PaymentProgress === '已对账'} />{record.PaymentProgress || '未对账'}</div>
+                          <div className="condition-line"><StatusDot valid={Boolean(record.PaymentMethod)} />{record.PaymentMethod || '付款形式未带出'}</div>
                         </td>
                         <td><span className="attachment-count"><FileCheck2 size={15} />{record.AttachmentCount}</span></td>
                         <td className="number-cell"><strong>{money(record.Cost)}</strong></td>
@@ -502,29 +512,30 @@ function App() {
             </label>
             <label>
               <span>付款主体</span>
-              <input value={paymentEntity} readOnly placeholder="由关联立项审批的承接主体自动带出" />
-              <small className="file-hint">来自关联立项审批，不需要重复选择</small>
+              {preview?.PaymentEntityOptions.length ? (
+                <select value={paymentEntity} onChange={(event) => setPaymentEntity(event.target.value)}>
+                  <option value="">请选择付款主体</option>
+                  {preview.PaymentEntityOptions.map((option) => <option key={option}>{option}</option>)}
+                </select>
+              ) : (
+                <input value={paymentEntity} onChange={(event) => setPaymentEntity(event.target.value)} placeholder="请输入付款主体" />
+              )}
+              <small className="file-hint">提交后自动回填到付款执行明细</small>
             </label>
             <label>
               <span>期望付款日期</span>
               <input type="date" value={expectedPaymentDate} onChange={(event) => setExpectedPaymentDate(event.target.value)} />
             </label>
-            {preview?.RequiredUploads.some((upload) => upload.Key === 'supporting') && (
-              <label>
-                <span>
-                  补充审批附件
-                  {preview.RequiredUploads.some((upload) => upload.Key === 'supporting' && upload.SatisfiedByBase)
-                    ? '（付款明细已有凭证，可选）'
-                    : '（必填）'}
-                </span>
-                <input
-                  type="file"
-                  multiple
-                  onChange={(event) => setSupportingFiles(Array.from(event.target.files || []))}
-                />
-                {supportingFiles.length > 0 && <small className="file-hint">已选择 {supportingFiles.length} 个文件</small>}
-              </label>
-            )}
+            <label>
+              <span>发票附件</span>
+              <input type="file" multiple accept="image/*,.pdf" onChange={(event) => setInvoiceFiles(Array.from(event.target.files || []))} />
+              <small className="file-hint">有发票时上传；无需发票可留空{invoiceFiles.length ? ` · 已选择 ${invoiceFiles.length} 个` : ''}</small>
+            </label>
+            <label>
+              <span>补充审批附件（可选）</span>
+              <input type="file" multiple onChange={(event) => setSupportingFiles(Array.from(event.target.files || []))} />
+              {supportingFiles.length > 0 && <small className="file-hint">已选择 {supportingFiles.length} 个文件</small>}
+            </label>
             {preview?.RequiredUploads.some((upload) => upload.Key === 'qr') && (
               <label>
                 <span>收款二维码（必填）</span>
@@ -693,7 +704,6 @@ function App() {
                 <tr>
                   <th>项目编号</th>
                   <th>项目名称</th>
-                  <th>付款明细</th>
                   <th>资源账号 / 收款人</th>
                   <th>平台 / 内容</th>
                   <th>付款形式</th>
@@ -711,7 +721,6 @@ function App() {
                   <tr key={record.RecordId}>
                     <td>{record.ProjectCode || '—'}</td>
                     <td>{record.ProjectName || '—'}</td>
-                    <td>{record.Name}</td>
                     <td>{record.ResourceAccount || '—'}<small>{record.Recipient || '—'}</small></td>
                     <td>
                       {record.Platform || '—'}
