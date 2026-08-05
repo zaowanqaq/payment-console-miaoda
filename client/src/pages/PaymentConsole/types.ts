@@ -124,5 +124,5 @@ export type ClosureSubmitResult = {
   InstanceCode: string
   InstanceLink: string
   SerialNumber?: string | null
-  RecordCount: 1
+  RecordCount: number
 }

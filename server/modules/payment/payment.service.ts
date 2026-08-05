@@ -870,7 +870,11 @@ export class PaymentService {
     ]);
     const blockingErrors = this.closureDefinitionErrors(definition);
     if (!records.length) blockingErrors.push('未勾选任何结项申请。');
-    if (records.length > 1) blockingErrors.push('项目结项暂时只支持每次选择一条记录，请取消其他勾选后重试。');
+    const selectedProjectIds = [...new Set(records.flatMap((record) => {
+      const ids = this.linkIds(record.fields['关联项目']);
+      return ids.length === 1 ? ids : [];
+    }))];
+    if (selectedProjectIds.length > 1) blockingErrors.push('项目结项只能合并同一立项下的付款执行明细，请分项目提审。');
     const items = records.map((record) => {
       const errors: string[] = [];
       const projectIds = this.linkIds(record.fields['关联项目']);
@@ -909,7 +913,7 @@ export class PaymentService {
       Action: 'ClosurePreview',
       DefinitionName: this.config.closureApprovalName,
       RecordCount: records.length,
-      CanSubmit: records.length === 1 && errors.length === 0,
+      CanSubmit: records.length > 0 && errors.length === 0,
       BlockingErrors: errors,
       Records: items,
       ProjectStatusOptions: Object.keys(this.config.closureProjectStatusValues),
@@ -930,9 +934,24 @@ export class PaymentService {
       this.listTableRecords(token, this.config.closureSyncTableId),
     ]);
     const errors = this.closureDefinitionErrors(definition);
-    if (records.length !== 1) {
-      errors.push(records.length ? '项目结项暂时只支持每次选择一条记录，请取消其他勾选后重试。' : '未勾选任何结项申请。');
-    }
+    if (!records.length) errors.push('未勾选任何结项申请。');
+    const projectIdsByRecord = records.map((record) => this.linkIds(record.fields['关联项目']));
+    const selectedProjectIds = [...new Set(projectIdsByRecord.flatMap((ids) => ids.length === 1 ? ids : []))];
+    if (selectedProjectIds.length > 1) errors.push('项目结项只能合并同一立项下的付款执行明细，请分项目提审。');
+    records.forEach((record, index) => {
+      const recordName = this.recordName(record);
+      const projectIds = projectIdsByRecord[index];
+      const linkedProject = projectIds.length === 1 ? projects.find((item) => item.recordId === projectIds[0]) : undefined;
+      if (projectIds.length !== 1) errors.push(`${recordName}：请先关联一条立项审批。`);
+      else if (!linkedProject) errors.push(`${recordName}：关联项目不在立项同步表中。`);
+      else if (!this.approved([linkedProject]).length) errors.push(`${recordName}：关联项目审批尚未通过。`);
+      const existingInstanceCode = this.text(record.fields['结项审批实例Code']);
+      const existingStatus = this.text(record.fields['结项审批状态']);
+      if (existingInstanceCode && !['REJECTED', 'CANCELED', 'DELETED'].includes(existingStatus || '')) {
+        errors.push(`${recordName}：已经发起过项目结项审批，请勿重复提交。`);
+      }
+    });
+    const project = selectedProjectIds.length === 1 ? projects.find((item) => item.recordId === selectedProjectIds[0]) : undefined;
     const requiredText = [
       ['项目名称', input.projectName],
       ['项目编号', input.projectCode],
@@ -946,16 +965,6 @@ export class PaymentService {
     const recipientValue = this.config.closureRecipientValues[input.recipientEntity as keyof typeof this.config.closureRecipientValues];
     if (!recipientValue) errors.push('收款主体不在审批允许范围内。');
     if (!Number.isFinite(Number(input.amount)) || Number(input.amount) <= 0) errors.push('项目金额必须大于 0。');
-    const existingInstanceCode = this.text(records[0]?.fields['结项审批实例Code']);
-    const existingStatus = this.text(records[0]?.fields['结项审批状态']);
-    if (existingInstanceCode && !['REJECTED', 'CANCELED', 'DELETED'].includes(existingStatus || '')) {
-      errors.push('该付款执行明细已经发起过项目结项审批，请勿重复提交。');
-    }
-    const projectIds = this.linkIds(records[0]?.fields['关联项目']);
-    const project = projectIds.length === 1 ? projects.find((item) => item.recordId === projectIds[0]) : undefined;
-    if (projectIds.length !== 1) errors.push('请先关联一条立项审批。');
-    else if (!project) errors.push('关联项目不在立项同步表中。');
-    else if (!this.approved([project]).length) errors.push('关联项目审批尚未通过。');
     const sourceProjectCode = this.normalized(project?.fields['项目编号']);
     const sourceProjectName = this.normalized(project?.fields['项目名称']);
     const approvedClosure = this.approved(closureSyncRecords).some((closure) => sourceProjectCode
@@ -991,7 +1000,7 @@ export class PaymentService {
       );
       const instanceLink = created.instance_link || this.config.closureApprovalLink;
       const serialNumber = await this.approvalSerialNumber(token, created.instance_code);
-      await this.updateRecords(token, [records[0].recordId], {
+      await this.updateRecords(token, records.map((record) => record.recordId), {
         '结项审批实例Code': created.instance_code,
         '结项编号': serialNumber || closureId,
         '结项审批链接': instanceLink,
@@ -1005,11 +1014,11 @@ export class PaymentService {
         InstanceCode: created.instance_code,
         InstanceLink: instanceLink,
         SerialNumber: serialNumber,
-        RecordCount: 1,
+        RecordCount: records.length,
       };
     } catch (error) {
       const detail = this.friendlyApprovalError(error, definition);
-      await this.updateRecords(token, [records[0].recordId], { '申请结项选择框': true }).catch(() => undefined);
+      await this.updateRecords(token, records.map((record) => record.recordId), { '申请结项选择框': true }).catch(() => undefined);
       throw new HttpException(detail, HttpStatus.BAD_REQUEST);
     }
   }

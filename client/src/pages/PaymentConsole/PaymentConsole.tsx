@@ -630,7 +630,7 @@ function App() {
                 {closurePreview?.CanSubmit ? <CheckCircle2 size={19} /> : <AlertCircle size={19} />}
                 <strong>{closurePreview?.CanSubmit ? '可发起结项审批' : '结项申请暂不可提交'}</strong>
               </div>
-              <span>当前仅支持每次勾选一条执行明细；无需上传材料。</span>
+              <span>可勾选同一立项下的一条或多条执行明细；无需上传材料。</span>
               {closurePreview?.BlockingErrors.slice(0, 4).map((item) => <p key={item}>{item}</p>)}
             </div>
 
