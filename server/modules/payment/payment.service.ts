@@ -380,6 +380,14 @@ export class PaymentService {
     if (approvalTypes.length !== 1) errors.push('不同付款方式不能混合提审。');
     if (approvalType === 'Unknown') errors.push('付款形式为空、未识别或同一批次包含多种付款形式。');
     if (approvalType === 'CloudSingle' && records.length !== 1) errors.push('云账户单人付款每次只能勾选一条付款明细。');
+    if (approvalType === 'Cloud') {
+      const recipientEntities = records.map((record) => this.text(record.fields['承接主体（自动带出）']));
+      records.forEach((record, index) => {
+        if (!recipientEntities[index]) errors.push(`${this.recordName(record)}：关联立项缺少承接主体。`);
+      });
+      const uniqueRecipientEntities = [...new Set(recipientEntities.filter(Boolean))];
+      if (uniqueRecipientEntities.length > 1) errors.push('云账户批量付款必须按立项承接主体分批提审。');
+    }
     if (approvalType === 'Corporate') {
       const payeeKeys = [...new Set(records.map((record) => [
         this.normalized(record.fields['收款户名（自动带出）']),
@@ -571,7 +579,7 @@ export class PaymentService {
           : name === '项目编号'
             ? this.text(records[0]?.fields['项目编号（自动带出）'])
             : name === '承接主体'
-              ? input?.paymentEntity?.trim() || this.text(records[0]?.fields['付款主体'])
+              ? this.text(records[0]?.fields['承接主体（自动带出）'])
               : name === '收款户名'
                 ? this.text(records[0]?.fields['收款户名（自动带出）'])
                 : name === '银行账号'
@@ -753,6 +761,7 @@ export class PaymentService {
         ...record.fields,
         '项目编号（自动带出）': projectRecord?.fields['项目编号'] ?? record.fields['项目编号（自动带出）'],
         '项目名称': projectRecord?.fields['项目名称'] ?? record.fields['项目名称'],
+        '承接主体（自动带出）': projectRecord?.fields['承接主体'] ?? record.fields['承接主体（自动带出）'],
         '资源账号（自动带出）': resourceRecord?.fields['资源代称'] ?? record.fields['资源账号（自动带出）'],
         '收款人（自动带出）': resourceRecord?.fields['真实姓名'] ?? record.fields['收款人（自动带出）'],
         '银行卡号（自动带出）': resourceRecord?.fields['银行卡号'] ?? record.fields['银行卡号（自动带出）'],
@@ -1430,11 +1439,13 @@ export class PaymentService {
         const widgets = this.config.cloudWidgets;
         const projectName = this.text(records[0]?.fields['项目名称']);
         const projectCode = this.text(records[0]?.fields['项目编号（自动带出）']);
+        const recipientEntity = this.text(records[0]?.fields['承接主体（自动带出）']);
+        if (!recipientEntity) throw new Error('云账户批量付款无法从关联立项带出承接主体。');
         form = [
           { id: widgets.department, type: 'department', value: [{ open_id: this.config.walletDepartmentOpenId }] },
           { id: widgets.projectName, type: 'input', value: projectName || '' },
           { id: widgets.projectCode, type: 'input', value: projectCode || '' },
-          { id: widgets.entity, type: 'input', value: paymentEntity },
+          { id: widgets.entity, type: 'input', value: recipientEntity },
           { id: widgets.reason, type: 'textarea', value: reason },
           { id: widgets.detail, type: 'attachmentV2', value: detailCodes },
           { id: widgets.amount, type: 'amount', value: Math.round(totalAmount * 1.0665 * 100) / 100, currency: 'CNY' },
