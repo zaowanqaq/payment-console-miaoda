@@ -20,6 +20,7 @@ export class PaymentConfig {
   readonly projectSyncTableId = required('PROJECT_SYNC_TABLE_ID');
   readonly resourceSyncTableId = required('RESOURCE_SYNC_TABLE_ID');
   readonly closureSyncTableId = required('CLOSURE_SYNC_TABLE_ID');
+  readonly closureSyncFallbackTableId = optional('CLOSURE_SYNC_FALLBACK_TABLE_ID') || 'tblXgn1a9o4GzKAf';
   readonly paymentSyncTableId = required('PAYMENT_SYNC_TABLE_ID');
   readonly cloudSyncTableId = required('CLOUD_SYNC_TABLE_ID');
   readonly walletSyncTableId = required('WALLET_SYNC_TABLE_ID');

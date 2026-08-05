@@ -731,6 +731,15 @@ export class PaymentService {
     return this.listTableRecords(token, this.config.paymentTableId, filter);
   }
 
+  private async listClosureSyncRecords(token: string): Promise<BaseRecord[]> {
+    try {
+      return await this.listTableRecords(token, this.config.closureSyncTableId);
+    } catch (error) {
+      if (this.config.closureSyncFallbackTableId === this.config.closureSyncTableId) throw error;
+      return this.listTableRecords(token, this.config.closureSyncFallbackTableId);
+    }
+  }
+
   private approved(records: BaseRecord[]): BaseRecord[] {
     return records.filter((record) => this.hasOption(record.fields['申请状态'], ['已通过']));
   }
@@ -740,7 +749,7 @@ export class PaymentService {
     const [projects, resources, closures] = await Promise.all([
       this.listTableRecords(token, this.config.projectSyncTableId),
       this.listTableRecords(token, this.config.resourceSyncTableId),
-      this.listTableRecords(token, this.config.closureSyncTableId),
+      this.listClosureSyncRecords(token),
     ]);
     const approvedClosures = this.approved(closures);
     const nowText = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai', dateStyle: 'short', timeStyle: 'medium' }).format(new Date());
@@ -894,7 +903,7 @@ export class PaymentService {
     const [{ records, projects }, definition, closures] = await Promise.all([
       this.closureRecords(token),
       this.closureApprovalDefinition(token),
-      this.listTableRecords(token, this.config.closureSyncTableId),
+      this.listClosureSyncRecords(token),
     ]);
     const blockingErrors = this.closureDefinitionErrors(definition);
     if (!records.length) blockingErrors.push('未勾选任何结项申请。');
@@ -959,7 +968,7 @@ export class PaymentService {
     const [{ records, projects }, definition, closureSyncRecords] = await Promise.all([
       this.closureRecords(token),
       this.closureApprovalDefinition(token),
-      this.listTableRecords(token, this.config.closureSyncTableId),
+      this.listClosureSyncRecords(token),
     ]);
     const errors = this.closureDefinitionErrors(definition);
     if (!records.length) errors.push('未勾选任何结项申请。');
@@ -1330,7 +1339,7 @@ export class PaymentService {
   private async syncClosures(token: string): Promise<unknown[]> {
     const [records, closureSyncRecords] = await Promise.all([
       this.listRecords(token, { logic: 'and', conditions: [['结项审批实例Code', 'non_empty']] }),
-      this.listTableRecords(token, this.config.closureSyncTableId),
+      this.listClosureSyncRecords(token),
     ]);
     const results: unknown[] = [];
     for (const record of records) {
