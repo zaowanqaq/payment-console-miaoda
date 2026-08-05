@@ -257,7 +257,6 @@ function App() {
     && closureForm.paymentEntity.trim()
     && closureForm.recipientEntity
     && Number(closureForm.amount) > 0
-    && closureForm.contractNumber.trim()
     && !submitting,
   )
 
@@ -657,7 +656,7 @@ function App() {
                 </select>
               </label>
               <label><span>项目金额</span><input type="number" min="0.01" step="0.01" value={closureForm.amount} onChange={(event) => setClosureForm((form) => ({ ...form, amount: event.target.value }))} /></label>
-              <label><span>合同编号</span><input value={closureForm.contractNumber} onChange={(event) => setClosureForm((form) => ({ ...form, contractNumber: event.target.value }))} placeholder="从付款执行明细带出，可补充" /></label>
+              <label><span>合同编号（选填）</span><input value={closureForm.contractNumber} onChange={(event) => setClosureForm((form) => ({ ...form, contractNumber: event.target.value }))} placeholder="从付款执行明细带出，可补充" /></label>
             </div>
 
             <div className="submit-footer">
@@ -708,12 +707,19 @@ function App() {
                   <th>平台 / 内容</th>
                   <th>付款形式</th>
                   <th>实际成本</th>
-                  <th>收款户名</th>
-                  <th>收款账号</th>
-                  <th>开户银行</th>
-                  <th>开户支行</th>
-                  <th>开户省</th>
-                  <th>开户市</th>
+                  {preview.ApprovalType === 'CloudSingle' ? <>
+                    <th>真实姓名</th>
+                    <th>银行卡号</th>
+                    <th>身份证号</th>
+                    <th>联系电话</th>
+                  </> : <>
+                    <th>收款户名</th>
+                    <th>收款账号</th>
+                    <th>开户银行</th>
+                    <th>开户支行</th>
+                    <th>开户省</th>
+                    <th>开户市</th>
+                  </>}
                 </tr>
               </thead>
               <tbody>
@@ -728,12 +734,19 @@ function App() {
                     </td>
                     <td>{record.PaymentMethod || '—'}<small>{record.TaxRate ? `税点：${record.TaxRate}` : '—'}</small></td>
                     <td className="capture-money">{money(record.Cost)}</td>
-                    <td>{record.PayeeAccountName || '—'}<small>{record.AccountType || '—'}</small></td>
-                    <td>{record.PayeeAccountNumber || '—'}</td>
-                    <td>{record.BankName || '—'}</td>
-                    <td>{record.BankBranch || '—'}</td>
-                    <td>{record.Province || '—'}</td>
-                    <td>{record.City || '—'}</td>
+                    {preview.ApprovalType === 'CloudSingle' ? <>
+                      <td>{record.PayeeAccountName || '—'}</td>
+                      <td>{record.PayeeAccountNumber || '—'}</td>
+                      <td>{record.PersonalIdNumber || '—'}</td>
+                      <td>{record.Phone || '—'}</td>
+                    </> : <>
+                      <td>{record.PayeeAccountName || '—'}<small>{record.AccountType || '—'}</small></td>
+                      <td>{record.PayeeAccountNumber || '—'}</td>
+                      <td>{record.BankName || '—'}</td>
+                      <td>{record.BankBranch || '—'}</td>
+                      <td>{record.Province || '—'}</td>
+                      <td>{record.City || '—'}</td>
+                    </>}
                   </tr>
                 ))}
               </tbody>

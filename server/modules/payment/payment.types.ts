@@ -39,6 +39,8 @@ export type BatchRecord = {
   TaxRate: string | null;
   PayeeAccountName: string | null;
   PayeeAccountNumber: string | null;
+  PersonalIdNumber: string | null;
+  Phone: string | null;
   BankName: string | null;
   BankBranch: string | null;
   Province: string | null;

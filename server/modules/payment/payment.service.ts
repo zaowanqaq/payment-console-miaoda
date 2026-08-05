@@ -929,7 +929,6 @@ export class PaymentService {
       ['项目名称', input.projectName],
       ['项目编号', input.projectCode],
       ['付款主体', input.paymentEntity],
-      ['合同编号', input.contractNumber],
     ] as const;
     for (const [label, value] of requiredText) {
       if (!value?.trim()) errors.push(`${label}不能为空。`);
@@ -966,8 +965,10 @@ export class PaymentService {
       { id: widgets.paymentEntity, type: 'input', value: input.paymentEntity!.trim() },
       { id: widgets.recipientEntity, type: 'radioV2', value: recipientValue },
       { id: widgets.amount, type: 'amount', value: Number(input.amount), currency: 'CNY' },
-      { id: widgets.contractNumber, type: 'input', value: input.contractNumber!.trim() },
     ];
+    if (input.contractNumber?.trim()) {
+      form.push({ id: widgets.contractNumber, type: 'input', value: input.contractNumber.trim() });
+    }
     const submittedErrors = this.submittedFormErrors(definition, form);
     if (submittedErrors.length) throw new HttpException(submittedErrors.join('\n'), HttpStatus.BAD_REQUEST);
     try {
@@ -1039,8 +1040,14 @@ export class PaymentService {
       Topic: this.text(record.fields['话题/内容']),
       Link: this.text(record.fields['链接']),
       TaxRate: this.text(record.fields['税点']),
-      PayeeAccountName: this.text(record.fields['收款户名（自动带出）']),
-      PayeeAccountNumber: this.text(record.fields['收款账号（自动带出）']),
+      PayeeAccountName: approvalType === 'CloudSingle'
+        ? this.text(record.fields['收款人（自动带出）'])
+        : this.text(record.fields['收款户名（自动带出）']),
+      PayeeAccountNumber: approvalType === 'CloudSingle'
+        ? this.text(record.fields['银行卡号（自动带出）'])
+        : this.text(record.fields['收款账号（自动带出）']),
+      PersonalIdNumber: approvalType === 'CloudSingle' ? this.text(record.fields['身份证号（自动带出）']) : null,
+      Phone: approvalType === 'CloudSingle' ? this.text(record.fields['联系电话（自动带出）']) : null,
       BankName: this.text(record.fields['开户银行（自动带出）']),
       BankBranch: this.text(record.fields['开户支行（自动带出）']),
       Province: this.text(record.fields['开户省（自动带出）']),
@@ -1104,7 +1111,25 @@ export class PaymentService {
     return `PAY-${stamp.slice(0, 8)}-${stamp.slice(8)}-${randomBytes(2).toString('hex').toUpperCase()}`;
   }
 
-  private csv(records: BaseRecord[], batchId: string): Buffer {
+  private csv(records: BaseRecord[], batchId: string, approvalType: ApprovalType): Buffer {
+    if (approvalType === 'CloudSingle') {
+      const columns = [
+        '付款批次号', '付款记录ID', '项目编号', '项目名称', '资源账号', '收款对象',
+        '真实姓名', '银行卡号', '身份证号', '联系电话',
+        '对应合同', '平台类型', '账号', '话题内容', '链接', '实际成本', '税点', '付款方式',
+      ];
+      const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const rows = records.map((record) => [
+        batchId, record.recordId, this.text(record.fields['项目编号（自动带出）']),
+        this.text(record.fields['项目名称']), this.text(record.fields['资源账号（自动带出）']), this.recordName(record),
+        this.text(record.fields['收款人（自动带出）']), this.text(record.fields['银行卡号（自动带出）']),
+        this.text(record.fields['身份证号（自动带出）']), this.text(record.fields['联系电话（自动带出）']),
+        this.text(record.fields['对应合同（自动带出）']), this.text(record.fields['平台/合作需求类型']),
+        this.text(record.fields['账号']), this.text(record.fields['话题/内容']), this.text(record.fields['链接']),
+        this.number(record.fields['实际成本']), this.text(record.fields['税点']), this.text(record.fields['付款形式']),
+      ]);
+      return Buffer.from(`\uFEFF${[columns, ...rows].map((row) => row.map(quote).join(',')).join('\r\n')}`, 'utf8');
+    }
     const columns = [
       '付款批次号', '付款记录ID', '项目编号', '项目名称', '资源账号', '收款人',
       '收款户名', '收款账号', '开户银行', '开户支行', '开户省', '开户市', '账户类型',
@@ -1347,7 +1372,7 @@ export class PaymentService {
           `${batchId}-付款执行明细.png`,
           screenshotFile!.mimetype || 'image/png',
         ),
-        this.uploadApprovalFile(this.csv(records, batchId), `${batchId}-payment-details.csv`, 'text/csv'),
+        this.uploadApprovalFile(this.csv(records, batchId, approvalType), `${batchId}-payment-details.csv`, 'text/csv'),
         Promise.all(invoiceFiles.map((file) => this.uploadApprovalFile(file.buffer, file.originalname, file.mimetype))),
       ]);
       const baseDetailCodes = [screenshotCode, csvCode, ...invoiceCodes];
