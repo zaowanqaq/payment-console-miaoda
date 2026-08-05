@@ -966,9 +966,7 @@ export class PaymentService {
       { id: widgets.recipientEntity, type: 'radioV2', value: recipientValue },
       { id: widgets.amount, type: 'amount', value: Number(input.amount), currency: 'CNY' },
     ];
-    if (input.contractNumber?.trim()) {
-      form.push({ id: widgets.contractNumber, type: 'input', value: input.contractNumber.trim() });
-    }
+    form.push({ id: widgets.contractNumber, type: 'input', value: input.contractNumber?.trim() || '无' });
     const submittedErrors = this.submittedFormErrors(definition, form);
     if (submittedErrors.length) throw new HttpException(submittedErrors.join('\n'), HttpStatus.BAD_REQUEST);
     try {

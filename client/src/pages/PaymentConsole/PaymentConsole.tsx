@@ -656,7 +656,7 @@ function App() {
                 </select>
               </label>
               <label><span>项目金额</span><input type="number" min="0.01" step="0.01" value={closureForm.amount} onChange={(event) => setClosureForm((form) => ({ ...form, amount: event.target.value }))} /></label>
-              <label><span>合同编号（选填）</span><input value={closureForm.contractNumber} onChange={(event) => setClosureForm((form) => ({ ...form, contractNumber: event.target.value }))} placeholder="从付款执行明细带出，可补充" /></label>
+              <label><span>合同编号（选填）</span><input value={closureForm.contractNumber} onChange={(event) => setClosureForm((form) => ({ ...form, contractNumber: event.target.value }))} placeholder="选填；未填写将自动按“无”提交" /></label>
             </div>
 
             <div className="submit-footer">
