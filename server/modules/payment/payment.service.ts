@@ -28,6 +28,7 @@ type ApprovalControlDefinition = {
   required?: boolean;
   type: string;
   visible?: boolean;
+  display_condition?: unknown;
 };
 
 type ApprovalDefinition = {
@@ -103,6 +104,17 @@ export class PaymentService {
     });
   }
 
+  private userName(value: unknown): string | null {
+    const items = Array.isArray(value) ? value : [value];
+    const names = items.flatMap((item) => {
+      if (item && typeof item === 'object' && 'name' in item) {
+        const name = String((item as { name: unknown }).name || '').trim();
+        return name ? [name] : [];
+      }
+      return [];
+    });
+    return names.length ? names.join('、') : null;
+  }
   private attachmentEntries(value: unknown): AttachmentEntry[] {
     const items = Array.isArray(value) ? value : [value];
     return items.flatMap((item) => {
@@ -488,7 +500,7 @@ export class PaymentService {
         token,
       );
     } catch {
-      throw new HttpException('暂时无法读取【测试】项目结项审批配置，请稍后刷新重试。', HttpStatus.BAD_GATEWAY);
+      throw new HttpException('暂时无法读取【测试】用于成本结项审批配置，请稍后刷新重试。', HttpStatus.BAD_GATEWAY);
     }
   }
 
@@ -633,7 +645,11 @@ export class PaymentService {
     return [...new Set(errors)];
   }
 
-  private submittedFormErrors(definition: ApprovalDefinition | null, form: Array<Record<string, unknown>>): string[] {
+  private submittedFormErrors(
+    definition: ApprovalDefinition | null,
+    form: Array<Record<string, unknown>>,
+    activeConditionalControlIds?: Set<string>,
+  ): string[] {
     const submitted = new Map(form.map((item) => [String(item.id || ''), item]));
     const errors: string[] = [];
     const empty = (value: unknown): boolean => value == null
@@ -641,6 +657,7 @@ export class PaymentService {
       || (Array.isArray(value) && value.length === 0);
     for (const control of this.definitionControls(definition).filter((item) => item.required && item.visible !== false)) {
       const item = submitted.get(control.id);
+      if (!item && control.display_condition && activeConditionalControlIds && !activeConditionalControlIds.has(control.id)) continue;
       const value = control.type === 'contact' ? item?.open_ids : item?.value;
       if (!item || empty(value) || (control.type === 'amount' && Number(value) <= 0)) {
         errors.push(`审批必填项“${control.name || '未命名字段'}”尚未填写，请补充后再提审。`);
@@ -845,17 +862,28 @@ export class PaymentService {
     return [...new Set(errors)];
   }
 
-  private closureRecipientEntity(value: unknown): keyof typeof this.config.closureRecipientValues {
-    const entity = this.text(value) || '';
-    return entity === '新枝' || entity === '火勺' || entity === '游鸟' ? entity : '其他';
-  }
-
   private async closureRecords(token: string): Promise<{ records: BaseRecord[]; projects: BaseRecord[] }> {
     const [records, projects] = await Promise.all([
       this.listRecords(token, this.closureSelectedFilter()),
       this.listTableRecords(token, this.config.projectSyncTableId),
     ]);
     return { records, projects };
+  }
+
+  private closureCsv(records: BaseRecord[], closureId: string): Buffer {
+    const columns = [
+      '结项批次号', '付款记录ID', '项目编号', '项目名称', '资源名称', '资源账号',
+      '付款形式', '实际成本', '税点', '平台类型', '账号', '话题内容', '链接',
+    ];
+    const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = records.map((record) => [
+      closureId, record.recordId, this.text(record.fields['项目编号（自动带出）']),
+      this.text(record.fields['项目名称']), this.recordName(record), this.text(record.fields['资源账号（自动带出）']),
+      this.text(record.fields['付款形式']), this.number(record.fields['实际成本']), this.text(record.fields['税点']),
+      this.text(record.fields['平台/合作需求类型']), this.text(record.fields['账号']),
+      this.text(record.fields['话题/内容']), this.text(record.fields['链接']),
+    ]);
+    return Buffer.from(`\uFEFF${[columns, ...rows].map((row) => row.map(quote).join(',')).join('\r\n')}`, 'utf8');
   }
 
   async closurePreview(req: Request, res: Response, tableId?: string): Promise<ClosurePreview> {
@@ -882,7 +910,9 @@ export class PaymentService {
       if (projectIds.length !== 1) errors.push('请先关联一条立项审批。');
       else if (!project) errors.push('关联项目不在立项同步表中。');
       else if (!this.approved([project]).length) errors.push('关联项目审批尚未通过。');
-
+      if (project && !this.userIds(project.fields['项目PM'])[0]) errors.push('关联立项缺少项目PM。');
+      const cost = this.number(record.fields['实际成本']);
+      if (cost == null || cost <= 0) errors.push('实际成本必须大于 0。');
       const existingInstanceCode = this.text(record.fields['结项审批实例Code']);
       const existingStatus = this.text(record.fields['结项审批状态']);
       if (existingInstanceCode && !['REJECTED', 'CANCELED', 'DELETED'].includes(existingStatus || '')) {
@@ -894,30 +924,28 @@ export class PaymentService {
         ? this.normalized(closure.fields['项目编号']) === projectCode
         : projectName && this.normalized(closure.fields['项目名称']) === projectName);
       if (approvedClosure) errors.push('该项目已经存在已通过的项目结项审批。');
-
       return {
         RecordId: record.recordId,
         Name: this.recordName(record),
         ProjectName: this.text(project?.fields['项目名称']) || this.text(record.fields['项目名称']),
         ProjectCode: this.text(project?.fields['项目编号']) || this.text(record.fields['项目编号（自动带出）']),
-        ProjectStatus: '已验收待开票',
-        PaymentEntity: this.text(project?.fields['下单主体']),
-        RecipientEntity: this.closureRecipientEntity(project?.fields['承接主体']),
-        Amount: this.number(project?.fields['预计收入']),
+        ProjectPm: this.userName(project?.fields['项目PM']),
+        Cost: cost,
         Errors: errors,
       };
     });
     blockingErrors.push(...items.flatMap((item) => item.Errors));
     const errors = [...new Set(blockingErrors)];
+    const totalAmount = records.reduce((sum, record) => sum + (this.number(record.fields['实际成本']) || 0), 0);
     return {
       Action: 'ClosurePreview',
       DefinitionName: this.config.closureApprovalName,
       RecordCount: records.length,
+      TotalAmount: totalAmount,
       CanSubmit: records.length > 0 && errors.length === 0,
       BlockingErrors: errors,
       Records: items,
-      ProjectStatusOptions: Object.keys(this.config.closureProjectStatusValues),
-      RecipientEntityOptions: Object.keys(this.config.closureRecipientValues),
+      SupplierSourceOptions: Object.keys(this.config.closureSupplierSourceValues),
     };
   }
 
@@ -945,6 +973,8 @@ export class PaymentService {
       if (projectIds.length !== 1) errors.push(`${recordName}：请先关联一条立项审批。`);
       else if (!linkedProject) errors.push(`${recordName}：关联项目不在立项同步表中。`);
       else if (!this.approved([linkedProject]).length) errors.push(`${recordName}：关联项目审批尚未通过。`);
+      const cost = this.number(record.fields['实际成本']);
+      if (cost == null || cost <= 0) errors.push(`${recordName}：实际成本必须大于 0。`);
       const existingInstanceCode = this.text(record.fields['结项审批实例Code']);
       const existingStatus = this.text(record.fields['结项审批状态']);
       if (existingInstanceCode && !['REJECTED', 'CANCELED', 'DELETED'].includes(existingStatus || '')) {
@@ -952,19 +982,18 @@ export class PaymentService {
       }
     });
     const project = selectedProjectIds.length === 1 ? projects.find((item) => item.recordId === selectedProjectIds[0]) : undefined;
-    const requiredText = [
-      ['项目名称', input.projectName],
-      ['项目编号', input.projectCode],
-      ['付款主体', input.paymentEntity],
-    ] as const;
-    for (const [label, value] of requiredText) {
-      if (!value?.trim()) errors.push(`${label}不能为空。`);
-    }
-    const projectStatusValue = this.config.closureProjectStatusValues[input.projectStatus as keyof typeof this.config.closureProjectStatusValues];
-    if (!projectStatusValue) errors.push('项目状态不在审批允许范围内。');
-    const recipientValue = this.config.closureRecipientValues[input.recipientEntity as keyof typeof this.config.closureRecipientValues];
-    if (!recipientValue) errors.push('收款主体不在审批允许范围内。');
-    if (!Number.isFinite(Number(input.amount)) || Number(input.amount) <= 0) errors.push('项目金额必须大于 0。');
+    const projectName = this.text(project?.fields['项目名称']);
+    const projectCode = this.text(project?.fields['项目编号']);
+    const projectPmId = this.userIds(project?.fields['项目PM'])[0];
+    const supplierName = this.text(project?.fields['承接主体']);
+    const totalAmount = records.reduce((sum, record) => sum + (this.number(record.fields['实际成本']) || 0), 0);
+    const supplierSourceValue = this.config.closureSupplierSourceValues[input.supplierSource as keyof typeof this.config.closureSupplierSourceValues];
+    if (!projectName) errors.push('关联立项缺少项目名称。');
+    if (!projectCode) errors.push('关联立项缺少项目编号。');
+    if (!projectPmId) errors.push('关联立项缺少项目PM。');
+    if (totalAmount <= 0) errors.push('所选执行明细的实际成本合计必须大于 0。');
+    if (!supplierSourceValue) errors.push('请选择外部供应商或内部供应商。');
+    if (input.supplierSource === '内部供应商' && !supplierName) errors.push('内部供应商无法从关联立项带出供应商简称。');
     const sourceProjectCode = this.normalized(project?.fields['项目编号']);
     const sourceProjectName = this.normalized(project?.fields['项目名称']);
     const approvedClosure = this.approved(closureSyncRecords).some((closure) => sourceProjectCode
@@ -972,20 +1001,31 @@ export class PaymentService {
       : sourceProjectName && this.normalized(closure.fields['项目名称']) === sourceProjectName);
     if (approvedClosure) errors.push('该项目已经存在已通过的项目结项审批。');
     if (errors.length) throw new HttpException([...new Set(errors)].join('\n'), HttpStatus.BAD_REQUEST);
-
     const closureId = this.closureId();
     const widgets = this.config.closureWidgets;
-    const form: Array<Record<string, unknown>> = [
-      { id: widgets.projectName, type: 'input', value: input.projectName!.trim() },
-      { id: widgets.projectCode, type: 'input', value: input.projectCode!.trim() },
-      { id: widgets.projectStatus, type: 'radioV2', value: projectStatusValue },
-      { id: widgets.paymentEntity, type: 'input', value: input.paymentEntity!.trim() },
-      { id: widgets.recipientEntity, type: 'radioV2', value: recipientValue },
-      { id: widgets.amount, type: 'amount', value: Number(input.amount), currency: 'CNY' },
-    ];
-    const submittedErrors = this.submittedFormErrors(definition, form);
-    if (submittedErrors.length) throw new HttpException(submittedErrors.join('\n'), HttpStatus.BAD_REQUEST);
     try {
+      const form: Array<Record<string, unknown>> = [
+        { id: widgets.projectName, type: 'input', value: projectName },
+        { id: widgets.projectCode, type: 'input', value: projectCode },
+        { id: widgets.projectPm, type: 'contact', open_ids: [projectPmId] },
+        { id: widgets.amount, type: 'amount', value: totalAmount, currency: 'CNY' },
+        { id: widgets.supplierSource, type: 'radioV2', value: supplierSourceValue },
+      ];
+      const activeConditionalControlIds = new Set<string>();
+      if (input.supplierSource === '外部供应商') {
+        const detailCode = await this.uploadApprovalFile(
+          this.closureCsv(records, closureId),
+          `${closureId}-项目明细.csv`,
+          'text/csv',
+        );
+        form.push({ id: widgets.detail, type: 'attachmentV2', value: [detailCode] });
+        activeConditionalControlIds.add(widgets.detail);
+      } else {
+        form.push({ id: widgets.supplierName, type: 'input', value: supplierName });
+        activeConditionalControlIds.add(widgets.supplierName);
+      }
+      const submittedErrors = this.submittedFormErrors(definition, form, activeConditionalControlIds);
+      if (submittedErrors.length) throw new HttpException(submittedErrors.join('\n'), HttpStatus.BAD_REQUEST);
       const created = await this.feishu.api<{ instance_code: string; instance_link?: string }>(
         'approval/v4/instances/initiate?user_id_type=open_id',
         token,
@@ -1022,7 +1062,6 @@ export class PaymentService {
       throw new HttpException(detail, HttpStatus.BAD_REQUEST);
     }
   }
-
   async preview(req: Request, res: Response, tableId?: string): Promise<BatchPreview> {
     if (tableId && tableId !== this.config.paymentTableId) {
       throw new HttpException('请切换到【付款执行明细】后再使用插件', HttpStatus.BAD_REQUEST);

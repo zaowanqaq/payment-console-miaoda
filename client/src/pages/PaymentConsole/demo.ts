@@ -120,21 +120,19 @@ export const demoPreview: BatchPreview = {
 
 export const demoClosurePreview: ClosurePreview = {
   Action: 'ClosurePreview',
-  DefinitionName: '【测试】项目结项',
+  DefinitionName: '【测试】用于成本结项',
   RecordCount: 1,
+  TotalAmount: 198000,
   CanSubmit: true,
   BlockingErrors: [],
-  ProjectStatusOptions: ['已发货待验收', '已验收待开票', '已开票待回款', '已回款', '其他'],
-  RecipientEntityOptions: ['新枝', '火勺', '游鸟', '其他'],
+  SupplierSourceOptions: ['外部供应商', '内部供应商'],
   Records: [{
     RecordId: 'demo-closure-001',
     Name: '示例项目结项留档',
     ProjectName: '夏日内容采购项目',
     ProjectCode: 'DEMO-2026-0712',
-    ProjectStatus: '已验收待开票',
-    PaymentEntity: '示例客户主体',
-    RecipientEntity: '游鸟',
-    Amount: 198000,
+    ProjectPm: '唧唧',
+    Cost: 198000,
     Errors: [],
   }],
 }

@@ -74,14 +74,7 @@ function App() {
   const [submitting, setSubmitting] = useState(false)
   const [submitStage, setSubmitStage] = useState(0)
   const [result, setResult] = useState<SubmitResult | ClosureSubmitResult | null>(null)
-  const [closureForm, setClosureForm] = useState({
-    projectName: '',
-    projectCode: '',
-    projectStatus: '已验收待开票',
-    paymentEntity: '',
-    recipientEntity: '其他',
-    amount: '',
-  })
+  const [supplierSource, setSupplierSource] = useState('外部供应商')
   const [qrFile, setQrFile] = useState<File | null>(null)
   const [invoiceFiles, setInvoiceFiles] = useState<File[]>([])
   const [supportingFiles, setSupportingFiles] = useState<File[]>([])
@@ -89,7 +82,6 @@ function App() {
   const refreshPromiseRef = useRef<Promise<void> | null>(null)
   const loadedOnceRef = useRef(false)
   const submittingRef = useRef(false)
-  const closureDefaultsKeyRef = useRef('')
   const paymentDefaultsKeyRef = useRef('')
 
   const refresh = useCallback((options: { sync?: boolean; showLoading?: boolean } = {}) => {
@@ -114,19 +106,6 @@ function App() {
         if (mode === 'closure') {
           const nextPreview = await api.closurePreview(context)
           setClosurePreview(nextPreview)
-          const record = nextPreview.Records[0]
-          const defaultsKey = record?.RecordId || ''
-          if (record && closureDefaultsKeyRef.current !== defaultsKey) {
-            closureDefaultsKeyRef.current = defaultsKey
-            setClosureForm({
-              projectName: record.ProjectName || '',
-              projectCode: record.ProjectCode || '',
-              projectStatus: record.ProjectStatus || '已验收待开票',
-              paymentEntity: record.PaymentEntity || '',
-              recipientEntity: record.RecipientEntity || '其他',
-              amount: record.Amount == null ? '' : String(record.Amount),
-            })
-          }
         } else {
           const nextPreview = await api.preview(context)
           setPreview(nextPreview)
@@ -249,12 +228,7 @@ function App() {
   const selectedRecordKey = preview?.Records.map((record) => record.RecordId).join('|') || ''
   const closureReady = Boolean(
     closurePreview?.CanSubmit
-    && closureForm.projectName.trim()
-    && closureForm.projectCode.trim()
-    && closureForm.projectStatus
-    && closureForm.paymentEntity.trim()
-    && closureForm.recipientEntity
-    && Number(closureForm.amount) > 0
+    && supplierSource
     && !submitting,
   )
 
@@ -321,16 +295,10 @@ function App() {
     const timer = window.setInterval(() => setSubmitStage((stage) => Math.min(stage + 1, 4)), 900)
     try {
       const nextResult = await api.submitClosure({
-        projectName: closureForm.projectName,
-        projectCode: closureForm.projectCode,
-        projectStatus: closureForm.projectStatus,
-        paymentEntity: closureForm.paymentEntity,
-        recipientEntity: closureForm.recipientEntity,
-        amount: Number(closureForm.amount),
+        supplierSource,
       })
       setSubmitStage(5)
       setResult(nextResult)
-      closureDefaultsKeyRef.current = ''
       void refresh()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '项目结项提审失败')
@@ -577,8 +545,8 @@ function App() {
               </div>
               <div className="batch-meta">
                 <div><strong>{closurePreview?.RecordCount ?? 0}</strong><span>条勾选</span></div>
-                <div><strong>{money(closurePreview?.Records[0]?.Amount)}</strong><span>项目金额</span></div>
-                <div><strong>{closurePreview?.DefinitionName || '【测试】项目结项'}</strong><span>审批定义</span></div>
+                <div><strong>{money(closurePreview?.TotalAmount)}</strong><span>共计金额</span></div>
+                <div><strong>{closurePreview?.DefinitionName || '【测试】用于成本结项'}</strong><span>审批定义</span></div>
               </div>
             </div>
 
@@ -591,7 +559,8 @@ function App() {
                     <tr>
                       <th>执行明细</th>
                       <th>关联项目</th>
-                      <th className="number-cell">项目金额</th>
+                      <th>项目 PM</th>
+                      <th className="number-cell">实际成本</th>
                       <th aria-label="校验结果" />
                     </tr>
                   </thead>
@@ -602,7 +571,8 @@ function App() {
                         <tr key={record.RecordId} className={valid ? '' : 'row-invalid'}>
                           <td><strong className="record-name">{record.Name}</strong><span className="record-sub">结项审批留档</span></td>
                           <td><span className="primary-text">{record.ProjectName || '未关联项目'}</span><span className="record-sub">{record.ProjectCode || '未带出项目编号'}</span></td>
-                          <td className="number-cell"><strong>{money(record.Amount)}</strong></td>
+                          <td><span className="primary-text">{record.ProjectPm || '未带出项目 PM'}</span></td>
+                          <td className="number-cell"><strong>{money(record.Cost)}</strong></td>
                           <td>
                             <span className={valid ? 'result-icon valid' : 'result-icon invalid'} title={record.Errors.join('\n')}>
                               {valid ? <Check size={15} /> : <AlertCircle size={15} />}
@@ -630,27 +600,17 @@ function App() {
                 {closurePreview?.CanSubmit ? <CheckCircle2 size={19} /> : <AlertCircle size={19} />}
                 <strong>{closurePreview?.CanSubmit ? '可发起结项审批' : '结项申请暂不可提交'}</strong>
               </div>
-              <span>可勾选同一立项下的一条或多条执行明细；无需上传材料。</span>
+              <span>可勾选同一立项下的一条或多条执行明细；项目字段及 CSV 由系统自动生成。</span>
               {closurePreview?.BlockingErrors.slice(0, 4).map((item) => <p key={item}>{item}</p>)}
             </div>
 
             <div className="form-stack closure-form">
-              <label><span>项目名称</span><input value={closureForm.projectName} onChange={(event) => setClosureForm((form) => ({ ...form, projectName: event.target.value }))} /></label>
-              <label><span>项目编号</span><input value={closureForm.projectCode} onChange={(event) => setClosureForm((form) => ({ ...form, projectCode: event.target.value }))} /></label>
               <label>
-                <span>项目状态</span>
-                <select value={closureForm.projectStatus} onChange={(event) => setClosureForm((form) => ({ ...form, projectStatus: event.target.value }))}>
-                  {(closurePreview?.ProjectStatusOptions || ['已验收待开票']).map((option) => <option key={option}>{option}</option>)}
+                <span>供应商来源</span>
+                <select value={supplierSource} onChange={(event) => setSupplierSource(event.target.value)}>
+                  {(closurePreview?.SupplierSourceOptions || ['外部供应商', '内部供应商']).map((option) => <option key={option}>{option}</option>)}
                 </select>
               </label>
-              <label><span>付款主体</span><input value={closureForm.paymentEntity} onChange={(event) => setClosureForm((form) => ({ ...form, paymentEntity: event.target.value }))} placeholder="默认从立项审批的下单主体带出" /></label>
-              <label>
-                <span>收款主体</span>
-                <select value={closureForm.recipientEntity} onChange={(event) => setClosureForm((form) => ({ ...form, recipientEntity: event.target.value }))}>
-                  {(closurePreview?.RecipientEntityOptions || ['新枝', '火勺', '游鸟', '其他']).map((option) => <option key={option}>{option}</option>)}
-                </select>
-              </label>
-              <label><span>项目金额</span><input type="number" min="0.01" step="0.01" value={closureForm.amount} onChange={(event) => setClosureForm((form) => ({ ...form, amount: event.target.value }))} /></label>
             </div>
 
             <div className="submit-footer">

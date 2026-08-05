@@ -27,32 +27,24 @@ export class PaymentConfig {
   readonly walletApprovalCode = optional('WALLET_APPROVAL_CODE') || 'B371918A-58C5-469D-99DF-76FB02F9BCFA';
   readonly cloudApprovalCode = optional('CLOUD_APPROVAL_CODE') || '2F29FCB6-ED2D-48AB-A064-C1C27FD4F988';
   readonly cloudSingleApprovalCode = optional('CLOUD_SINGLE_APPROVAL_CODE') || 'AEB9B736-C8CF-486F-88C5-12A017592E58';
-  readonly closureApprovalCode = optional('CLOSURE_APPROVAL_CODE') || 'E7E75FC5-D6F3-4907-8620-C5FEC1E75E47';
+  readonly closureApprovalCode = optional('CLOSURE_APPROVAL_CODE') || '7EE85661-DE6F-4D64-8E76-D4FDBA6686FE';
   readonly corporateApprovalName = optional('PROJECT_APPROVAL_NAME') || '【测试】付款';
   readonly walletApprovalName = optional('WALLET_APPROVAL_NAME') || '【测试】小荷包';
   readonly cloudApprovalName = optional('CLOUD_APPROVAL_NAME') || '【测试】云账户批量付款资源（仅达人）';
   readonly cloudSingleApprovalName = optional('CLOUD_SINGLE_APPROVAL_NAME') || '【测试】云账户单人付款 【媒介专属】';
-  readonly closureApprovalName = optional('CLOSURE_APPROVAL_NAME') || '【测试】项目结项';
+  readonly closureApprovalName = optional('CLOSURE_APPROVAL_NAME') || '【测试】用于成本结项';
   readonly closureWidgets = {
     projectName: optional('CLOSURE_WIDGET_PROJECT_NAME_ID') || 'widget15995472980940001',
     projectCode: optional('CLOSURE_WIDGET_PROJECT_CODE_ID') || 'widget17261296138090001',
-    projectStatus: optional('CLOSURE_WIDGET_PROJECT_STATUS_ID') || 'widget17261298132910001',
-    paymentEntity: optional('CLOSURE_WIDGET_PAYMENT_ENTITY_ID') || 'widget17261297972930001',
-    recipientEntity: optional('CLOSURE_WIDGET_RECIPIENT_ENTITY_ID') || 'widget17261301495660001',
-    amount: optional('CLOSURE_WIDGET_AMOUNT_ID') || 'widget17261301892520001',
+    projectPm: optional('CLOSURE_WIDGET_PROJECT_PM_ID') || 'widget17261308893820001',
+    amount: optional('CLOSURE_WIDGET_AMOUNT_ID') || 'widget17261366169970001',
+    supplierSource: optional('CLOSURE_WIDGET_SUPPLIER_SOURCE_ID') || 'widget17631134270100001',
+    detail: optional('CLOSURE_WIDGET_DETAIL_ID') || 'widget17261309811910001',
+    supplierName: optional('CLOSURE_WIDGET_SUPPLIER_NAME_ID') || 'widget17631133373720001',
   };
-  readonly closureProjectStatusValues = {
-    '已发货待验收': 'm0z14g18-x5jt3r0x88-0',
-    '已验收待开票': 'm0z14g18-p9ilrzegiz9-0',
-    '已开票待回款': 'm3znoptd-3r9uo50renw-1',
-    '已回款': 'm3znoptd-o6a9ve9hlgr-3',
-    '其他': 'm3znoptd-vsj3pykngf9-5',
-  } as const;
-  readonly closureRecipientValues = {
-    '新枝': 'm0z1bni7-grqui1a8m8v-0',
-    '火勺': 'm0z1bni7-znl95y5tu9-0',
-    '游鸟': 'm0z1bnin-swiv62yk21h-1',
-    '其他': 'm0z1bnin-69girtf6cyh-3',
+  readonly closureSupplierSourceValues = {
+    '外部供应商': 'mhyo7n0j-hj0sswxm54s-0',
+    '内部供应商': 'mhyo7n0j-qud3wqpyhm-0',
   } as const;
   readonly cloudWidgets = {
     department: optional('CLOUD_WIDGET_DEPARTMENT_ID') || 'widget17848852798030001',
@@ -129,7 +121,7 @@ export class PaymentConfig {
   readonly cloudSingleApprovalLink = process.env.CLOUD_SINGLE_APPROVAL_LINK?.trim()
     || 'https://applink.feishu.cn/client/mini_program/open?appId=cli_9cb844403dbb9108&mode=appCenter&path=pc%2Fpages%2Fcreate-form%2Findex%3Fid%3D7669707697763159006%26scene%3Ddefinition-share&relaunch=true';
   readonly closureApprovalLink = process.env.CLOSURE_APPROVAL_LINK?.trim()
-    || 'https://applink.feishu.cn/client/mini_program/open?appId=cli_9cb844403dbb9108&mode=appCenter&path=pc%2Fpages%2Fcreate-form%2Findex%3Fid%3D7666025280951061703%26scene%3Ddefinition-share&relaunch=true';
+    || 'https://applink.feishu.cn/client/mini_program/open?appId=cli_9cb844403dbb9108&mode=appCenter&path=pc%2Fpages%2Fcreate-form%2Findex%3Fid%3D7670446956887510301%26scene%3Ddefinition-share&relaunch=true';
   readonly oauthScopes = [
     'auth:user.id:read',
     'offline_access',

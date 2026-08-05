@@ -73,12 +73,7 @@ export class PaymentController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
     @Body() body: {
-      projectName?: string;
-      projectCode?: string;
-      projectStatus?: string;
-      paymentEntity?: string;
-      recipientEntity?: string;
-      amount?: number;
+      supplierSource?: string;
       confirmed?: boolean;
     },
   ) {

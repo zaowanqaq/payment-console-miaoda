@@ -90,10 +90,8 @@ export type ClosureRecord = {
   Name: string
   ProjectName: string | null
   ProjectCode: string | null
-  ProjectStatus: string
-  PaymentEntity: string | null
-  RecipientEntity: string
-  Amount: number | null
+  ProjectPm: string | null
+  Cost: number | null
   Errors: string[]
 }
 
@@ -101,20 +99,15 @@ export type ClosurePreview = {
   Action: 'ClosurePreview'
   DefinitionName: string
   RecordCount: number
+  TotalAmount: number
   CanSubmit: boolean
   BlockingErrors: string[]
   Records: ClosureRecord[]
-  ProjectStatusOptions: string[]
-  RecipientEntityOptions: string[]
+  SupplierSourceOptions: string[]
 }
 
 export type ClosureSubmitInput = {
-  projectName: string
-  projectCode: string
-  projectStatus: string
-  paymentEntity: string
-  recipientEntity: string
-  amount: number
+  supplierSource: string
 }
 
 export type ClosureSubmitResult = {
