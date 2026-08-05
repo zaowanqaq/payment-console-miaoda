@@ -135,7 +135,6 @@ export const demoClosurePreview: ClosurePreview = {
     PaymentEntity: '示例客户主体',
     RecipientEntity: '游鸟',
     Amount: 198000,
-    ContractNumber: 'DEMO-CONTRACT-2026-0712',
     Errors: [],
   }],
 }

@@ -79,7 +79,6 @@ export class PaymentController {
       paymentEntity?: string;
       recipientEntity?: string;
       amount?: number;
-      contractNumber?: string;
       confirmed?: boolean;
     },
   ) {

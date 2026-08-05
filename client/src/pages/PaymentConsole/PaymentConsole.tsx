@@ -81,7 +81,6 @@ function App() {
     paymentEntity: '',
     recipientEntity: '其他',
     amount: '',
-    contractNumber: '',
   })
   const [qrFile, setQrFile] = useState<File | null>(null)
   const [invoiceFiles, setInvoiceFiles] = useState<File[]>([])
@@ -126,7 +125,6 @@ function App() {
               paymentEntity: record.PaymentEntity || '',
               recipientEntity: record.RecipientEntity || '其他',
               amount: record.Amount == null ? '' : String(record.Amount),
-              contractNumber: record.ContractNumber || '',
             })
           }
         } else {
@@ -329,7 +327,6 @@ function App() {
         paymentEntity: closureForm.paymentEntity,
         recipientEntity: closureForm.recipientEntity,
         amount: Number(closureForm.amount),
-        contractNumber: closureForm.contractNumber,
       })
       setSubmitStage(5)
       setResult(nextResult)
@@ -594,7 +591,6 @@ function App() {
                     <tr>
                       <th>执行明细</th>
                       <th>关联项目</th>
-                      <th>合同编号</th>
                       <th className="number-cell">项目金额</th>
                       <th aria-label="校验结果" />
                     </tr>
@@ -606,7 +602,6 @@ function App() {
                         <tr key={record.RecordId} className={valid ? '' : 'row-invalid'}>
                           <td><strong className="record-name">{record.Name}</strong><span className="record-sub">结项审批留档</span></td>
                           <td><span className="primary-text">{record.ProjectName || '未关联项目'}</span><span className="record-sub">{record.ProjectCode || '未带出项目编号'}</span></td>
-                          <td><span className="primary-text">{record.ContractNumber || '待补充'}</span></td>
                           <td className="number-cell"><strong>{money(record.Amount)}</strong></td>
                           <td>
                             <span className={valid ? 'result-icon valid' : 'result-icon invalid'} title={record.Errors.join('\n')}>
@@ -656,7 +651,6 @@ function App() {
                 </select>
               </label>
               <label><span>项目金额</span><input type="number" min="0.01" step="0.01" value={closureForm.amount} onChange={(event) => setClosureForm((form) => ({ ...form, amount: event.target.value }))} /></label>
-              <label><span>合同编号（选填）</span><input value={closureForm.contractNumber} onChange={(event) => setClosureForm((form) => ({ ...form, contractNumber: event.target.value }))} placeholder="选填；未填写将自动按“无”提交" /></label>
             </div>
 
             <div className="submit-footer">

@@ -87,7 +87,6 @@ export type ClosureRecord = {
   PaymentEntity: string | null;
   RecipientEntity: string;
   Amount: number | null;
-  ContractNumber: string | null;
   Errors: string[];
 };
 
@@ -109,7 +108,6 @@ export type ClosureSubmitInput = {
   paymentEntity?: string;
   recipientEntity?: string;
   amount?: number;
-  contractNumber?: string;
   confirmed?: boolean;
 };
 

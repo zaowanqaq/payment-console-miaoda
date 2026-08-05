@@ -40,7 +40,6 @@ export class PaymentConfig {
     paymentEntity: optional('CLOSURE_WIDGET_PAYMENT_ENTITY_ID') || 'widget17261297972930001',
     recipientEntity: optional('CLOSURE_WIDGET_RECIPIENT_ENTITY_ID') || 'widget17261301495660001',
     amount: optional('CLOSURE_WIDGET_AMOUNT_ID') || 'widget17261301892520001',
-    contractNumber: optional('CLOSURE_WIDGET_CONTRACT_NUMBER_ID') || 'widget17261370678700001',
   };
   readonly closureProjectStatusValues = {
     '已发货待验收': 'm0z14g18-x5jt3r0x88-0',

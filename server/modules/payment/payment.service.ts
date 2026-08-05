@@ -891,7 +891,6 @@ export class PaymentService {
         PaymentEntity: this.text(project?.fields['下单主体']),
         RecipientEntity: this.closureRecipientEntity(project?.fields['承接主体']),
         Amount: this.number(project?.fields['预计收入']),
-        ContractNumber: this.text(record.fields['对应合同（自动带出）']),
         Errors: errors,
       };
     });
@@ -966,7 +965,6 @@ export class PaymentService {
       { id: widgets.recipientEntity, type: 'radioV2', value: recipientValue },
       { id: widgets.amount, type: 'amount', value: Number(input.amount), currency: 'CNY' },
     ];
-    form.push({ id: widgets.contractNumber, type: 'input', value: input.contractNumber?.trim() || '无' });
     const submittedErrors = this.submittedFormErrors(definition, form);
     if (submittedErrors.length) throw new HttpException(submittedErrors.join('\n'), HttpStatus.BAD_REQUEST);
     try {
