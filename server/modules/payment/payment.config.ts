@@ -10,6 +10,11 @@ function optional(name: string): string {
   return process.env[name]?.trim() || '';
 }
 
+function migratedOptional(name: string, legacyValue: string, currentValue: string): string {
+  const value = optional(name);
+  return !value || value === legacyValue ? currentValue : value;
+}
+
 @Injectable()
 export class PaymentConfig {
   readonly appId = required('FEISHU_APP_ID');
@@ -19,7 +24,7 @@ export class PaymentConfig {
   readonly paymentTableId = required('PAYMENT_TABLE_ID');
   readonly projectSyncTableId = required('PROJECT_SYNC_TABLE_ID');
   readonly resourceSyncTableId = required('RESOURCE_SYNC_TABLE_ID');
-  readonly closureSyncTableId = required('CLOSURE_SYNC_TABLE_ID');
+  readonly closureSyncTableId = migratedOptional('CLOSURE_SYNC_TABLE_ID', 'tbljMIfqpSrTrDUW', 'tblXgn1a9o4GzKAf');
   readonly closureSyncFallbackTableId = optional('CLOSURE_SYNC_FALLBACK_TABLE_ID') || 'tblXgn1a9o4GzKAf';
   readonly paymentSyncTableId = required('PAYMENT_SYNC_TABLE_ID');
   readonly cloudSyncTableId = required('CLOUD_SYNC_TABLE_ID');
@@ -28,12 +33,16 @@ export class PaymentConfig {
   readonly walletApprovalCode = optional('WALLET_APPROVAL_CODE') || 'B371918A-58C5-469D-99DF-76FB02F9BCFA';
   readonly cloudApprovalCode = optional('CLOUD_APPROVAL_CODE') || '2F29FCB6-ED2D-48AB-A064-C1C27FD4F988';
   readonly cloudSingleApprovalCode = optional('CLOUD_SINGLE_APPROVAL_CODE') || 'AEB9B736-C8CF-486F-88C5-12A017592E58';
-  readonly closureApprovalCode = optional('CLOSURE_APPROVAL_CODE') || '7EE85661-DE6F-4D64-8E76-D4FDBA6686FE';
+  readonly closureApprovalCode = migratedOptional(
+    'CLOSURE_APPROVAL_CODE',
+    'E7E75FC5-D6F3-4907-8620-C5FEC1E75E47',
+    '7EE85661-DE6F-4D64-8E76-D4FDBA6686FE',
+  );
   readonly corporateApprovalName = optional('PROJECT_APPROVAL_NAME') || '【测试】付款';
   readonly walletApprovalName = optional('WALLET_APPROVAL_NAME') || '【测试】小荷包';
   readonly cloudApprovalName = optional('CLOUD_APPROVAL_NAME') || '【测试】云账户批量付款资源（仅达人）';
   readonly cloudSingleApprovalName = optional('CLOUD_SINGLE_APPROVAL_NAME') || '【测试】云账户单人付款 【媒介专属】';
-  readonly closureApprovalName = optional('CLOSURE_APPROVAL_NAME') || '【测试】用于成本结项';
+  readonly closureApprovalName = migratedOptional('CLOSURE_APPROVAL_NAME', '【测试】项目结项', '【测试】用于成本结项');
   readonly closureWidgets = {
     projectName: optional('CLOSURE_WIDGET_PROJECT_NAME_ID') || 'widget15995472980940001',
     projectCode: optional('CLOSURE_WIDGET_PROJECT_CODE_ID') || 'widget17261296138090001',
@@ -121,8 +130,11 @@ export class PaymentConfig {
     || 'https://applink.feishu.cn/client/mini_program/open?appId=cli_9cb844403dbb9108&mode=appCenter&path=pc%2Fpages%2Fcreate-form%2Findex%3Fid%3D7666024249366170920%26scene%3Ddefinition-share&relaunch=true';
   readonly cloudSingleApprovalLink = process.env.CLOUD_SINGLE_APPROVAL_LINK?.trim()
     || 'https://applink.feishu.cn/client/mini_program/open?appId=cli_9cb844403dbb9108&mode=appCenter&path=pc%2Fpages%2Fcreate-form%2Findex%3Fid%3D7669707697763159006%26scene%3Ddefinition-share&relaunch=true';
-  readonly closureApprovalLink = process.env.CLOSURE_APPROVAL_LINK?.trim()
-    || 'https://applink.feishu.cn/client/mini_program/open?appId=cli_9cb844403dbb9108&mode=appCenter&path=pc%2Fpages%2Fcreate-form%2Findex%3Fid%3D7670446956887510301%26scene%3Ddefinition-share&relaunch=true';
+  readonly closureApprovalLink = migratedOptional(
+    'CLOSURE_APPROVAL_LINK',
+    'https://applink.feishu.cn/client/mini_program/open?appId=cli_9cb844403dbb9108&mode=appCenter&path=pc%2Fpages%2Fcreate-form%2Findex%3Fid%3D7666025280951061703%26scene%3Ddefinition-share&relaunch=true',
+    'https://applink.feishu.cn/client/mini_program/open?appId=cli_9cb844403dbb9108&mode=appCenter&path=pc%2Fpages%2Fcreate-form%2Findex%3Fid%3D7670446956887510301%26scene%3Ddefinition-share&relaunch=true',
+  );
   readonly oauthScopes = [
     'auth:user.id:read',
     'offline_access',
