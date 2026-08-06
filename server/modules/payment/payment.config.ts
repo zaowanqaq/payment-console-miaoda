@@ -38,9 +38,9 @@ export class PaymentConfig {
     'E7E75FC5-D6F3-4907-8620-C5FEC1E75E47',
     '7EE85661-DE6F-4D64-8E76-D4FDBA6686FE',
   );
-  readonly corporateApprovalName = optional('PROJECT_APPROVAL_NAME') || '【测试】付款';
+  readonly corporateApprovalName = optional('PROJECT_APPROVAL_NAME') || '【测试】对公付款';
   readonly walletApprovalName = optional('WALLET_APPROVAL_NAME') || '【测试】小荷包';
-  readonly cloudApprovalName = optional('CLOUD_APPROVAL_NAME') || '【测试】云账户批量付款资源（仅达人）';
+  readonly cloudApprovalName = optional('CLOUD_APPROVAL_NAME') || '【测试】云账户批量付款资源';
   readonly cloudSingleApprovalName = optional('CLOUD_SINGLE_APPROVAL_NAME') || '【测试】云账户单人付款 【媒介专属】';
   readonly closureApprovalName = migratedOptional('CLOSURE_APPROVAL_NAME', '【测试】项目结项', '【测试】用于成本结项');
   readonly closureWidgets = {
@@ -57,13 +57,12 @@ export class PaymentConfig {
     '内部供应商': 'mhyo7n0j-qud3wqpyhm-0',
   } as const;
   readonly cloudWidgets = {
-    department: optional('CLOUD_WIDGET_DEPARTMENT_ID') || 'widget17848852798030001',
     projectName: optional('CLOUD_WIDGET_PROJECT_NAME_ID') || 'widget17848852976180001',
     projectCode: optional('CLOUD_WIDGET_PROJECT_CODE_ID') || 'widget17848853077220001',
-    entity: optional('CLOUD_WIDGET_ENTITY_ID') || 'widget17848853143530001',
     reason: optional('CLOUD_WIDGET_REASON_ID') || 'widget17228709591510001',
     detail: optional('CLOUD_WIDGET_DETAIL_ATTACHMENT_ID') || 'widget17228697554950001',
-    amount: optional('CLOUD_WIDGET_AMOUNT_ID') || 'widget17228709704020001',
+    receivedAmount: optional('CLOUD_WIDGET_RECEIVED_AMOUNT_ID') || 'widget17228709704020001',
+    amountWithFee: optional('CLOUD_WIDGET_AMOUNT_WITH_FEE_ID') || 'widget17859341767610001',
     date: optional('CLOUD_WIDGET_DATE_ID') || 'widget17319026392330001',
   };
   readonly cloudSingleWidgets = {
@@ -89,8 +88,12 @@ export class PaymentConfig {
     '其他': 'miwtjjh3-pr8nufptcfj-9',
     HK: 'mo8mwbm8-pz7k64v5n0l-1',
   } as const;
+  readonly paymentEntityOptions = [
+    '游鸟科技', '游鸟文化', 'HS', 'YD', '新枝', '火勺', '虫乾', '悉多', '皮娃', '平河', '迈越文',
+  ] as const;
   readonly walletWidgets = {
-    department: optional('WALLET_WIDGET_DEPARTMENT_ID') || 'widget17848854158820001',
+    projectName: optional('WALLET_WIDGET_PROJECT_NAME_ID') || 'widget17859346519750001',
+    projectCode: optional('WALLET_WIDGET_PROJECT_CODE_ID') || 'widget17859346535610001',
     detail: optional('WALLET_WIDGET_DETAIL_ATTACHMENT_ID') || 'widget17848854208630001',
     amount: optional('WALLET_WIDGET_AMOUNT_ID') || 'widget17848854285820001',
     qr: optional('WALLET_WIDGET_QR_IMAGE_ID') || 'widget17848854409660001',
@@ -102,15 +105,16 @@ export class PaymentConfig {
     ? optional('WALLET_DEPARTMENT_OPEN_ID')
     : 'od-fbaa82826fa4370666c21145fcea9bc0';
   readonly corporateWidgets = {
-    department: optional('PROJECT_WIDGET_DEPARTMENT_ID') || 'widget17848849503700001',
-    contact: optional('PROJECT_WIDGET_CONTACT_ID') || 'widget17848849874750001',
+    recipient: optional('PROJECT_WIDGET_RECIPIENT_ID') || 'widget17859343847550001',
     reason: optional('PROJECT_WIDGET_REASON_ID') || 'widget16510492382000001',
     detail: optional('PROJECT_WIDGET_DETAIL_ATTACHMENT_ID') || 'widget16510493307470001',
-    evidence: optional('PROJECT_WIDGET_EVIDENCE_ATTACHMENT_ID') || 'widget17848851204670001',
+    invoice: optional('PROJECT_WIDGET_INVOICE_ID') || 'widget17859344834390001',
+    paymentEntity: optional('PROJECT_WIDGET_PAYMENT_ENTITY_ID') || 'widget17859344721380001',
     amount: optional('PROJECT_WIDGET_AMOUNT_ID') || 'widget16510492513760001',
-    method: optional('PROJECT_WIDGET_METHOD_ID') || 'widget16510492719570001',
     date: optional('PROJECT_WIDGET_DATE_ID') || 'widget16510493109960001',
     contract: optional('PROJECT_WIDGET_CONTRACT_ID') || 'widget17848851037140001',
+    evidence: optional('PROJECT_WIDGET_EVIDENCE_ATTACHMENT_ID') || 'widget17848851204670001',
+    deliverables: optional('PROJECT_WIDGET_DELIVERABLES_ID') || 'widget17848851328350001',
     accountName: optional('PROJECT_WIDGET_ACCOUNT_NAME_ID') || 'widget17852298142770001',
     accountNumber: optional('PROJECT_WIDGET_ACCOUNT_NUMBER_ID') || 'widget17852298443410001',
     bankName: optional('PROJECT_WIDGET_BANK_NAME_ID') || 'widget17852298448880001',
@@ -147,3 +151,6 @@ export class PaymentConfig {
     'docs:document.media:download',
   ].join(' ');
 }
+
+
+

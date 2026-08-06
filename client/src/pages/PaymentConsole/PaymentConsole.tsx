@@ -363,7 +363,7 @@ function App() {
             </div>
             <div className="batch-meta">
               <div><strong>{preview?.RecordCount ?? 0}</strong><span>条明细</span></div>
-              <div><strong>{money(preview?.TotalAmount)}</strong><span>实际成本</span></div>
+              <div><strong>{money(preview?.TotalAmount)}</strong><span>{preview?.ApprovalType === 'Wallet' ? '价格合计' : '实际成本'}</span></div>
               <div><strong>{preview?.DefinitionName || '待识别'}</strong><span>审批定义</span></div>
             </div>
           </div>
@@ -645,7 +645,7 @@ function App() {
                 <div><span>付款主体</span><strong>{paymentEntity}</strong></div>
                 <div><span>期望付款日期</span><strong>{expectedPaymentDate}</strong></div>
                 <div><span>记录数</span><strong>{preview.RecordCount}</strong></div>
-                <div><span>实际成本</span><strong>{money(preview.TotalAmount)}</strong></div>
+                <div><span>{preview.ApprovalType === 'Wallet' ? '价格合计' : '实际成本'}</span><strong>{money(preview.TotalAmount)}</strong></div>
                 <div>
                   <span>{preview.ServiceFeeRate ? '审批金额（含6.65%）' : '审批金额'}</span>
                   <strong>{money(preview.ApprovalAmount)}</strong>
@@ -657,6 +657,7 @@ function App() {
                 <tr>
                   <th>项目编号</th>
                   <th>项目名称</th>
+                  <th>承接主体</th>
                   <th>资源账号 / 收款人</th>
                   <th>平台 / 内容</th>
                   <th>付款形式</th>
@@ -681,6 +682,7 @@ function App() {
                   <tr key={record.RecordId}>
                     <td>{record.ProjectCode || '—'}</td>
                     <td>{record.ProjectName || '—'}</td>
+                    <td>{record.RecipientEntity || '—'}</td>
                     <td>{record.ResourceAccount || '—'}<small>{record.Recipient || '—'}</small></td>
                     <td>
                       {record.Platform || '—'}
@@ -705,6 +707,22 @@ function App() {
                 ))}
               </tbody>
             </table>
+            <div className="capture-all-fields">
+              <h3>付款执行明细全部字段</h3>
+              {preview.Records.map((record) => (
+                <section key={`${record.RecordId}-all-fields`}>
+                  <h4>{record.Name}</h4>
+                  <table className="capture-table capture-fields-table">
+                    <thead><tr><th>字段</th><th>值</th></tr></thead>
+                    <tbody>
+                      {(record.AllFields || []).map((field) => (
+                        <tr key={`${record.RecordId}-${field.Name}`}><td>{field.Name}</td><td>{field.Value || '—'}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+              ))}
+            </div>
             <div className="capture-footer">
               <span>截图由付款提审台根据付款执行明细自动生成</span>
               <span>{new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</span>
@@ -752,3 +770,5 @@ function App() {
 }
 
 export default App
+
+

@@ -240,6 +240,12 @@ button { cursor: pointer; }
 .capture-table tbody tr:nth-child(even) { background: #f7faf8; }
 .capture-table small { display: block; margin-top: 4px; color: #617068; font-size: 11px; line-height: 16px; }
 .capture-money { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.capture-all-fields { margin-top: 34px; }
+.capture-all-fields h3 { margin: 0 0 14px; color: #176448; font-size: 22px; }
+.capture-all-fields h4 { margin: 22px 0 -10px; font-size: 16px; }
+.capture-fields-table { table-layout: auto; }
+.capture-fields-table th:first-child,
+.capture-fields-table td:first-child { width: 280px; }
 .capture-footer {
   margin-top: 17px;
   display: flex;

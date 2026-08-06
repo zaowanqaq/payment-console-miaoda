@@ -3,6 +3,8 @@ export type BatchRecord = {
   Name: string
   ProjectName: string | null
   ProjectCode: string | null
+  RecipientEntity?: string | null
+  AllFields?: Array<{ Name: string; Value: string }>
   PaymentEntity: string | null
   ResourceAccount: string | null
   Recipient: string | null
@@ -119,3 +121,7 @@ export type ClosureSubmitResult = {
   SerialNumber?: string | null
   RecordCount: number
 }
+
+
+
+
