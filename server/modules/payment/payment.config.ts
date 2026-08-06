@@ -38,9 +38,9 @@ export class PaymentConfig {
     'E7E75FC5-D6F3-4907-8620-C5FEC1E75E47',
     '7EE85661-DE6F-4D64-8E76-D4FDBA6686FE',
   );
-  readonly corporateApprovalName = optional('PROJECT_APPROVAL_NAME') || '【测试】对公付款';
+  readonly corporateApprovalName = migratedOptional('PROJECT_APPROVAL_NAME', '【测试】付款', '【测试】对公付款');
   readonly walletApprovalName = optional('WALLET_APPROVAL_NAME') || '【测试】小荷包';
-  readonly cloudApprovalName = optional('CLOUD_APPROVAL_NAME') || '【测试】云账户批量付款资源';
+  readonly cloudApprovalName = migratedOptional('CLOUD_APPROVAL_NAME', '【测试】云账户批量付款资源（仅达人）', '【测试】云账户批量付款资源');
   readonly cloudSingleApprovalName = optional('CLOUD_SINGLE_APPROVAL_NAME') || '【测试】云账户单人付款 【媒介专属】';
   readonly closureApprovalName = migratedOptional('CLOSURE_APPROVAL_NAME', '【测试】项目结项', '【测试】用于成本结项');
   readonly closureWidgets = {
@@ -71,7 +71,6 @@ export class PaymentConfig {
     detail: optional('CLOUD_SINGLE_WIDGET_DETAIL_ATTACHMENT_ID') || 'widget17228697554950001',
     amountWithFee: optional('CLOUD_SINGLE_WIDGET_AMOUNT_WITH_FEE_ID') || 'widget17228709704020001',
     date: optional('CLOUD_SINGLE_WIDGET_DATE_ID') || 'widget17319026392330001',
-    entity: optional('CLOUD_SINGLE_WIDGET_ENTITY_ID') || 'widget17651782281240001',
     deliverables: optional('CLOUD_SINGLE_WIDGET_DELIVERABLES_ID') || 'widget17817699599520001',
     bankCard: optional('CLOUD_SINGLE_WIDGET_BANK_CARD_ID') || 'widget17228710207160001',
     realName: optional('CLOUD_SINGLE_WIDGET_REAL_NAME_ID') || 'widget17228710799580001',

@@ -285,13 +285,13 @@ export class PaymentService {
 
   private paymentAccountPatch(account: ParsedResourceAccount | null): Record<string, unknown> {
     return {
-      '收款户名（自动带出）': account?.accountName || null,
-      '收款账号（自动带出）': account?.accountNumber || null,
-      '开户银行（自动带出）': account?.bankName || null,
-      '开户支行（自动带出）': account?.bankBranch || null,
-      '开户省（自动带出）': account?.province || null,
-      '开户市（自动带出）': account?.city || null,
-      '账户类型（自动带出）': account?.accountType || null,
+      '对公-收款户名（自动带出）': account?.accountName || null,
+      '对公-收款账号（自动带出）': account?.accountNumber || null,
+      '对公-开户银行（自动带出）': account?.bankName || null,
+      '对公-开户支行（自动带出）': account?.bankBranch || null,
+      '对公-开户省（自动带出）': account?.province || null,
+      '对公-开户市（自动带出）': account?.city || null,
+      '对公-账户类型（自动带出）': account?.accountType || null,
       '账户校验状态（自动带出）': account?.status || '未解析',
     };
   }
@@ -441,8 +441,7 @@ export class PaymentService {
       return new Set(Object.values(this.config.cloudSingleWidgets).filter(Boolean));
     }
     if (approvalType === 'Wallet') {
-      const { detail, amount, qr } = this.config.walletWidgets;
-      return new Set([detail, amount, qr].filter(Boolean));
+      return new Set(Object.values(this.config.walletWidgets).filter(Boolean));
     }
     if (approvalType === 'Corporate') {
       return new Set(Object.values(this.config.corporateWidgets).filter(Boolean));
@@ -527,7 +526,7 @@ export class PaymentService {
     records: BaseRecord[],
     approvalType: ApprovalType,
     definition: ApprovalDefinition | null,
-    input?: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string },
+    input?: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; counterpartyAmount?: number },
   ): string[] {
     const errors: string[] = [];
     const expectedName = this.expectedDefinitionName(approvalType);
@@ -565,9 +564,6 @@ export class PaymentService {
       ] as const;
       const missing = requiredResourceFields.filter(([, value]) => !value?.trim()).map(([label]) => label);
       if (missing.length) errors.push(`云账户单人付款缺少${missing.join('、')}，请先补全关联资源入库信息。`);
-      if (input && !this.cloudSingleEntityLabel(input.paymentEntity)) {
-        errors.push(`下单主体必须选择：${this.config.paymentEntityOptions.join('、')}。`);
-      }
     }
     const totalAmount = records.reduce((sum, record) => sum + this.paymentAmount(record, approvalType), 0);
     const expectedControlIds = this.expectedControlIds(approvalType);
@@ -592,7 +588,11 @@ export class PaymentService {
         const contactId = this.userIds(records[0]?.fields['付款联系人OpenId（自动带出）'])[0];
         if (!contactId) errors.push(`审批必填项“${name}”无法自动带出，请检查关联项目的发起人。`);
       } else if (control.type === 'amount') {
-        if (totalAmount <= 0) errors.push(`审批必填项“${name}”必须大于 0，请填写付款执行明细的实际成本。`);
+        if (approvalType === 'Cloud' && name === '对方收款金额') {
+          if (input && !(Number(input.counterpartyAmount) > 0)) errors.push('审批必填项“对方收款金额”必须大于 0，请在插件中填写。');
+        } else if (totalAmount <= 0) {
+          errors.push(`审批必填项“${name}”必须大于 0，请填写付款执行明细的实际成本。`);
+        }
       } else if (control.type === 'input') {
         const value = name === '项目名称'
           ? this.text(records[0]?.fields['项目名称'])
@@ -637,8 +637,6 @@ export class PaymentService {
         errors.push(`审批必填项“${name}”不能为空，请填写付款事由。`);
       } else if (control.type === 'date' && input && !input.expectedPaymentDate) {
         errors.push(`审批必填项“${name}”不能为空，请选择期望付款日期。`);
-      } else if (control.type === 'checkboxV2' && approvalType === 'CloudSingle' && input && !this.cloudSingleEntityLabel(input.paymentEntity)) {
-        errors.push(`审批必填项“${name}”必须选择有效主体。`);
       } else if (control.type === 'radioV2' && approvalType === 'Corporate' && !this.config.corporatePaymentMethodValue) {
         errors.push(`审批必填项“${name}”未配置，请联系插件管理员设置付款方式。`);
       } else if (control.type === 'account') {
@@ -797,10 +795,17 @@ export class PaymentService {
         '项目名称': projectRecord?.fields['项目名称'] ?? record.fields['项目名称'],
         '承接主体（自动带出）': projectRecord?.fields['承接主体'] ?? record.fields['承接主体（自动带出）'],
         '资源账号（自动带出）': resourceRecord?.fields['资源代称'] ?? record.fields['资源账号（自动带出）'],
-        '收款人（自动带出）': resourceRecord?.fields['真实姓名'] ?? record.fields['收款人（自动带出）'],
-        '银行卡号（自动带出）': resourceRecord?.fields['银行卡号'] ?? record.fields['银行卡号（自动带出）'],
-        '身份证号（自动带出）': resourceRecord?.fields['身份证号'],
-        '联系电话（自动带出）': resourceRecord?.fields['联系电话'],
+        '收款人（自动带出）': resourceRecord?.fields['真实姓名'] ?? record.fields['云账户单人-收款人（自动带出）'],
+        '银行卡号（自动带出）': resourceRecord?.fields['银行卡号'] ?? record.fields['云账户单人-银行卡号（自动带出）'],
+        '身份证号（自动带出）': resourceRecord?.fields['身份证号'] ?? record.fields['云账户单人-身份证号（自动带出）'],
+        '联系电话（自动带出）': resourceRecord?.fields['联系电话'] ?? record.fields['云账户单人-联系电话（自动带出）'],
+        '收款户名（自动带出）': resourceAccount?.accountName ?? record.fields['对公-收款户名（自动带出）'],
+        '收款账号（自动带出）': resourceAccount?.accountNumber ?? record.fields['对公-收款账号（自动带出）'],
+        '开户银行（自动带出）': resourceAccount?.bankName ?? record.fields['对公-开户银行（自动带出）'],
+        '开户支行（自动带出）': resourceAccount?.bankBranch ?? record.fields['对公-开户支行（自动带出）'],
+        '开户省（自动带出）': resourceAccount?.province ?? record.fields['对公-开户省（自动带出）'],
+        '开户市（自动带出）': resourceAccount?.city ?? record.fields['对公-开户市（自动带出）'],
+        '账户类型（自动带出）': resourceAccount?.accountType ?? record.fields['对公-账户类型（自动带出）'],
         '付款联系人OpenId（自动带出）': projectInitiatorId,
         ...this.paymentAccountPatch(resourceAccount),
       };
@@ -1176,6 +1181,7 @@ export class PaymentService {
       Errors: errors,
       RequiredUploads: this.requiredUploads(records, definition),
       PaymentEntityOptions: [...this.config.paymentEntityOptions],
+      CounterpartyAmount: null,
       Records: items,
     };
   }
@@ -1391,7 +1397,7 @@ export class PaymentService {
   async submit(
     req: Request,
     res: Response,
-    input: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; confirmed?: boolean; allowValidationErrors?: boolean },
+    input: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; counterpartyAmount?: number; confirmed?: boolean; allowValidationErrors?: boolean },
     files: UploadedPaymentFile[] = [],
   ) {
     if (input.confirmed !== true) throw new HttpException('提交前需要明确确认', HttpStatus.BAD_REQUEST);
@@ -1406,7 +1412,8 @@ export class PaymentService {
     const screenshotFile = files.find((file) => file.fieldname === 'detailScreenshot');
     const qrFile = files.find((file) => file.fieldname === 'qrFile');
     const invoiceFiles = files.filter((file) => file.fieldname === 'invoiceFiles');
-    const supportingFiles = files.filter((file) => file.fieldname === 'supportingFiles');
+    const evidenceFiles = files.filter((file) => file.fieldname === 'evidenceFiles');
+    const deliverableFiles = files.filter((file) => file.fieldname === 'deliverableFiles');
     if (!screenshotFile) blockingErrors.push('付款执行明细截图生成失败，请刷新插件后重试。');
     if (screenshotFile && screenshotFile.mimetype !== 'image/png') {
       blockingErrors.push('付款执行明细截图格式异常，请刷新插件后重新生成。');
@@ -1415,6 +1422,9 @@ export class PaymentService {
       blockingErrors.push('收款二维码必须上传图片文件。');
     }
     if (invoiceFiles.some((file) => file.size <= 0)) blockingErrors.push('发票附件中存在空文件，请重新选择。');
+    if (approvalType === 'Corporate' && invoiceFiles.length === 0) blockingErrors.push('对公付款必须上传发票。');
+    if (approvalType === 'Corporate' && evidenceFiles.length === 0) blockingErrors.push('对公付款必须上传对账凭证。');
+    if (approvalType === 'Cloud' && !(Number(input.counterpartyAmount) > 0)) blockingErrors.push('云账户批量付款必须填写大于 0 的对方收款金额。');
     for (const upload of this.requiredUploads(records, definition)) {
       if (upload.Key === 'qr' && upload.Required && !qrFile) {
         blockingErrors.push(`审批必填项“${upload.Name}”尚未上传，请在付款提审台补充后再提交。`);
@@ -1429,7 +1439,7 @@ export class PaymentService {
     const totalPrice = records.reduce((sum, record) => sum + (this.number(record.fields['价格']) || 0), 0);
     const totalCost = records.reduce((sum, record) => sum + (this.number(record.fields['实际成本']) || 0), 0);
     const paymentEntity = input.paymentEntity?.trim() || '';
-    if (!this.config.paymentEntityOptions.includes(paymentEntity as (typeof this.config.paymentEntityOptions)[number])) {
+    if (approvalType === 'Corporate' && !this.config.paymentEntityOptions.includes(paymentEntity as (typeof this.config.paymentEntityOptions)[number])) {
       throw new HttpException('付款主体必须从选项中选择：' + this.config.paymentEntityOptions.join('、') + '。', HttpStatus.BAD_REQUEST);
     }
     const reason = `${input.reason.trim()} [${batchId}]`;
@@ -1454,17 +1464,10 @@ export class PaymentService {
         this.uploadApprovalFile(this.csv(records, batchId, approvalType), `${batchId}-payment-details.csv`, 'text/csv'),
         Promise.all(invoiceFiles.map((file) => this.uploadApprovalFile(file.buffer, file.originalname, file.mimetype))),
       ]);
-      const baseDetailCodes = [screenshotCode, csvCode, ...invoiceCodes];
-      const attachments = await this.resolvedAttachments(token, records);
+      const baseDetailCodes = [screenshotCode, csvCode];
       const deliverableAttachments = await this.resolvedAttachments(token, records, ['交付物']);
-      const [resolvedEvidenceCodes, uploadedEvidenceCodes, qrCode, resolvedDeliverableCodes] = await Promise.all([
-        Promise.all(attachments.map(async (attachment) => {
-          const query = new URLSearchParams();
-          if (attachment.extraInfo) query.set('extra', attachment.extraInfo);
-          const downloaded = await this.feishu.download(`drive/v1/medias/${attachment.fileToken}/download?${query}`, token);
-          return this.uploadApprovalFile(downloaded.buffer, attachment.name, downloaded.contentType);
-        })),
-        Promise.all(supportingFiles.map((file) => this.uploadApprovalFile(file.buffer, file.originalname, file.mimetype))),
+      const [uploadedEvidenceCodes, qrCode, resolvedDeliverableCodes] = await Promise.all([
+        Promise.all(evidenceFiles.map((file) => this.uploadApprovalFile(file.buffer, file.originalname, file.mimetype))),
         qrFile ? this.uploadApprovalFile(qrFile.buffer, qrFile.originalname, qrFile.mimetype, 'image') : Promise.resolve(null),
         Promise.all(deliverableAttachments.map(async (attachment) => {
           const query = new URLSearchParams();
@@ -1473,20 +1476,17 @@ export class PaymentService {
           return this.uploadApprovalFile(downloaded.buffer, attachment.name, downloaded.contentType);
         })),
       ]);
-      const evidenceCodes = [...resolvedEvidenceCodes, ...uploadedEvidenceCodes];
-      const deliverableCodes = [...resolvedDeliverableCodes, ...uploadedEvidenceCodes];
-      const detailCodes = approvalType === 'Corporate'
-        ? baseDetailCodes
-        : approvalType === 'CloudSingle'
-          ? [...baseDetailCodes, ...resolvedEvidenceCodes]
-          : [...baseDetailCodes, ...evidenceCodes];
+      const uploadedDeliverableCodes = await Promise.all(deliverableFiles.map((file) => this.uploadApprovalFile(file.buffer, file.originalname, file.mimetype)));
+      const evidenceCodes = uploadedEvidenceCodes;
+      const deliverableCodes = [...resolvedDeliverableCodes, ...uploadedDeliverableCodes];
+      const detailCodes = baseDetailCodes;
       const qrCodes = qrCode ? [qrCode] : [];
       await this.updateRecords(token, recordIds, {
         '付款批次号': batchId,
         '批量提交状态': '待提单',
         '审批定义': definitionName,
         '付款事由': reason,
-        '付款主体': paymentEntity,
+        ...(approvalType === 'Corporate' ? { '付款主体': paymentEntity } : {}),
         '期望付款日期': `${input.expectedPaymentDate} 00:00:00`,
         '付款审批链接': approvalLink,
         '审批附件Codes': JSON.stringify({ detail: detailCodes, invoice: invoiceCodes, evidence: evidenceCodes, qr: qrCodes }),
@@ -1509,7 +1509,7 @@ export class PaymentService {
           { id: widgets.realName, type: 'input', value: this.text(records[0]?.fields['收款人（自动带出）']) || '' },
           { id: widgets.idNumber, type: 'input', value: this.text(records[0]?.fields['身份证号（自动带出）']) || '' },
           { id: widgets.phone, type: 'input', value: this.text(records[0]?.fields['联系电话（自动带出）']) || '' },
-          { id: widgets.receivedAmount, type: 'number', value: totalAmount },
+          { id: widgets.receivedAmount, type: 'number', value: totalPrice },
         ];
         if (supportingCodes.length) {
           form.splice(6, 0, { id: widgets.deliverables, type: 'attachmentV2', value: supportingCodes });
@@ -1523,7 +1523,7 @@ export class PaymentService {
           { id: widgets.projectCode, type: 'input', value: projectCode || '' },
           { id: widgets.reason, type: 'textarea', value: reason },
           { id: widgets.detail, type: 'attachmentV2', value: detailCodes },
-          { id: widgets.receivedAmount, type: 'amount', value: totalPrice, currency: 'CNY' },
+          { id: widgets.receivedAmount, type: 'amount', value: Number(input.counterpartyAmount), currency: 'CNY' },
           { id: widgets.amountWithFee, type: 'amount', value: Math.round(totalCost * 1.0665 * 100) / 100, currency: 'CNY' },
           { id: widgets.date, type: 'date', value: `${input.expectedPaymentDate}T00:00:00+08:00` },
         ];

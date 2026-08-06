@@ -54,8 +54,8 @@ export const api = {
       viewId: context.viewId || '',
     })}`),
   submit: (
-    input: { reason: string; paymentEntity: string; expectedPaymentDate: string; allowValidationErrors: boolean },
-    files: { detailScreenshot: File; qrFile?: File | null; invoiceFiles?: File[]; supportingFiles?: File[] },
+    input: { reason: string; paymentEntity: string; expectedPaymentDate: string; counterpartyAmount: number | null; allowValidationErrors: boolean },
+    files: { detailScreenshot: File; qrFile?: File | null; invoiceFiles?: File[]; evidenceFiles?: File[]; deliverableFiles?: File[] },
   ) => {
     if (new URLSearchParams(window.location.search).has('demo')) {
       return Promise.resolve<SubmitResult>({
@@ -76,7 +76,8 @@ export const api = {
     body.append('detailScreenshot', files.detailScreenshot)
     if (files.qrFile) body.append('qrFile', files.qrFile)
     for (const file of files.invoiceFiles || []) body.append('invoiceFiles', file)
-    for (const file of files.supportingFiles || []) body.append('supportingFiles', file)
+    for (const file of files.evidenceFiles || []) body.append('evidenceFiles', file)
+    for (const file of files.deliverableFiles || []) body.append('deliverableFiles', file)
     return request<SubmitResult>('/api/batches/submit', {
       method: 'POST',
       body,

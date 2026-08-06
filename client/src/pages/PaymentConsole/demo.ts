@@ -14,6 +14,7 @@ export const demoPreview: BatchPreview = {
   BlockingErrors: [],
   Errors: [],
   RequiredUploads: [],
+  CounterpartyAmount: null,
   PaymentEntityOptions: [],
   Records: [
     {

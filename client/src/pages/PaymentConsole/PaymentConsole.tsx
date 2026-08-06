@@ -77,7 +77,9 @@ function App() {
   const [supplierSource, setSupplierSource] = useState('外部供应商')
   const [qrFile, setQrFile] = useState<File | null>(null)
   const [invoiceFiles, setInvoiceFiles] = useState<File[]>([])
-  const [supportingFiles, setSupportingFiles] = useState<File[]>([])
+  const [evidenceFiles, setEvidenceFiles] = useState<File[]>([])
+  const [deliverableFiles, setDeliverableFiles] = useState<File[]>([])
+  const [counterpartyAmount, setCounterpartyAmount] = useState<number | null>(null)
   const captureRef = useRef<HTMLDivElement | null>(null)
   const refreshPromiseRef = useRef<Promise<void> | null>(null)
   const loadedOnceRef = useRef(false)
@@ -218,9 +220,13 @@ function App() {
   const submitLabel = '生成材料并发起审批'
   const hasValidationErrors = Boolean(preview?.Errors.length)
   const hasBlockingErrors = Boolean(preview?.BlockingErrors.length)
+  const approvalType = preview?.ApprovalType
   const requiredQr = Boolean(preview?.RequiredUploads.some((upload) => upload.Key === 'qr' && upload.Required))
-  const uploadsReady = !requiredQr || Boolean(qrFile)
-  const isReady = Boolean(preview?.RecordCount && !hasBlockingErrors && uploadsReady && (preview.CanSubmit || allowValidationErrors) && reason.trim() && paymentEntity.trim() && expectedPaymentDate && !submitting)
+  const requiredCorporateUploads = approvalType !== 'Corporate' || (invoiceFiles.length > 0 && evidenceFiles.length > 0)
+  const requiredCounterpartyAmount = approvalType !== 'Cloud' || Number(counterpartyAmount) > 0
+  const paymentEntityReady = approvalType !== 'Corporate' || paymentEntity.trim()
+  const uploadsReady = (!requiredQr || Boolean(qrFile)) && requiredCorporateUploads && requiredCounterpartyAmount
+  const isReady = Boolean(preview?.RecordCount && !hasBlockingErrors && uploadsReady && (preview.CanSubmit || allowValidationErrors) && reason.trim() && paymentEntityReady && expectedPaymentDate && !submitting)
   const rowErrorCount = useMemo(
     () => preview?.Records.filter((record) => record.Errors.length > 0).length ?? 0,
     [preview],
@@ -235,7 +241,9 @@ function App() {
   useEffect(() => {
     setQrFile(null)
     setInvoiceFiles([])
-    setSupportingFiles([])
+    setEvidenceFiles([])
+    setDeliverableFiles([])
+    setCounterpartyAmount(null)
   }, [selectedRecordKey])
 
   if (isOAuthCallback) {
@@ -270,14 +278,16 @@ function App() {
       })
       const screenshot = new File([screenshotBlob], '付款执行明细.png', { type: 'image/png' })
       const nextResult = await api.submit(
-        { reason, paymentEntity, expectedPaymentDate, allowValidationErrors },
-        { detailScreenshot: screenshot, qrFile, invoiceFiles, supportingFiles },
+        { reason, paymentEntity, expectedPaymentDate, counterpartyAmount, allowValidationErrors },
+        { detailScreenshot: screenshot, qrFile, invoiceFiles, evidenceFiles, deliverableFiles },
       )
       setSubmitStage(5)
       setResult(nextResult)
       setQrFile(null)
       setInvoiceFiles([])
-      setSupportingFiles([])
+      setEvidenceFiles([])
+      setDeliverableFiles([])
+      setCounterpartyAmount(null)
       void refresh()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '提审失败')
@@ -473,41 +483,61 @@ function App() {
             <label>
               <span>付款事由</span>
               <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} placeholder="请输入付款事由" />
+              <small className="file-hint">四种付款形式均必填</small>
             </label>
-            <label>
-              <span>付款主体</span>
-              {preview?.PaymentEntityOptions.length ? (
+
+            {approvalType === 'Cloud' && (<>
+              <label>
+                <span>对方收款金额</span>
+                <input type="number" min="0.01" step="0.01" value={counterpartyAmount ?? ''} onChange={(event) => setCounterpartyAmount(event.target.value ? Number(event.target.value) : null)} placeholder="请输入对方实际收款金额" />
+                <small className="file-hint">手动填写，不使用付款执行明细的实际成本</small>
+              </label>
+              <label>
+                <span>期望付款日期</span>
+                <input type="date" value={expectedPaymentDate} onChange={(event) => setExpectedPaymentDate(event.target.value)} />
+              </label>
+            </>)}
+
+            {approvalType === 'Corporate' && (<>
+              <label>
+                <span>付款主体</span>
                 <select value={paymentEntity} onChange={(event) => setPaymentEntity(event.target.value)}>
                   <option value="">请选择付款主体</option>
                   {preview.PaymentEntityOptions.map((option) => <option key={option}>{option}</option>)}
                 </select>
-              ) : (
-                <input value={paymentEntity} onChange={(event) => setPaymentEntity(event.target.value)} placeholder="请输入付款主体" />
-              )}
-              <small className="file-hint">提交后自动回填到付款执行明细</small>
-            </label>
-            <label>
-              <span>期望付款日期</span>
-              <input type="date" value={expectedPaymentDate} onChange={(event) => setExpectedPaymentDate(event.target.value)} />
-            </label>
-            <label>
-              <span>发票附件</span>
-              <input type="file" multiple accept="image/*,.pdf" onChange={(event) => setInvoiceFiles(Array.from(event.target.files || []))} />
-              <small className="file-hint">有发票时上传；无需发票可留空{invoiceFiles.length ? ` · 已选择 ${invoiceFiles.length} 个` : ''}</small>
-            </label>
-            <label>
-              <span>补充审批附件（可选）</span>
-              <input type="file" multiple onChange={(event) => setSupportingFiles(Array.from(event.target.files || []))} />
-              {supportingFiles.length > 0 && <small className="file-hint">已选择 {supportingFiles.length} 个文件</small>}
-            </label>
-            {preview?.RequiredUploads.some((upload) => upload.Key === 'qr') && (
+              </label>
+              <label>
+                <span>付款日期</span>
+                <input type="date" value={expectedPaymentDate} onChange={(event) => setExpectedPaymentDate(event.target.value)} />
+              </label>
+              <label>
+                <span>发票（必填）</span>
+                <input type="file" multiple accept="image/*,.pdf" onChange={(event) => setInvoiceFiles(Array.from(event.target.files || []))} />
+                {invoiceFiles.length > 0 && <small className="file-hint">已选择 {invoiceFiles.length} 个文件</small>}
+              </label>
+              <label>
+                <span>对账凭证（必填）</span>
+                <input type="file" multiple accept="image/*,.pdf" onChange={(event) => setEvidenceFiles(Array.from(event.target.files || []))} />
+                {evidenceFiles.length > 0 && <small className="file-hint">已选择 {evidenceFiles.length} 个文件</small>}
+              </label>
+              <label>
+                <span>交付物（可选）</span>
+                <input type="file" multiple onChange={(event) => setDeliverableFiles(Array.from(event.target.files || []))} />
+              </label>
+            </>)}
+
+            {approvalType === 'CloudSingle' && (
+              <label>
+                <span>交付物（可选）</span>
+                <input type="file" multiple onChange={(event) => setDeliverableFiles(Array.from(event.target.files || []))} />
+                <small className="file-hint">银行卡号、身份证号、真实姓名、联系电话从资源入库自动带出</small>
+              </label>
+            )}
+
+            {approvalType === 'Wallet' && (
               <label>
                 <span>收款二维码（必填）</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => setQrFile(event.target.files?.[0] || null)}
-                />
+                <input type="file" accept="image/*" onChange={(event) => setQrFile(event.target.files?.[0] || null)} />
                 {qrFile && <small className="file-hint">{qrFile.name}</small>}
               </label>
             )}
