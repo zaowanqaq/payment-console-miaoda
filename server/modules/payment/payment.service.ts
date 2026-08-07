@@ -526,7 +526,7 @@ export class PaymentService {
     records: BaseRecord[],
     approvalType: ApprovalType,
     definition: ApprovalDefinition | null,
-    input?: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; counterpartyAmount?: number },
+    input?: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string },
   ): string[] {
     const errors: string[] = [];
     const expectedName = this.expectedDefinitionName(approvalType);
@@ -566,6 +566,7 @@ export class PaymentService {
       if (missing.length) errors.push(`云账户单人付款缺少${missing.join('、')}，请先补全关联资源入库信息。`);
     }
     const totalAmount = records.reduce((sum, record) => sum + this.paymentAmount(record, approvalType), 0);
+    const totalPrice = records.reduce((sum, record) => sum + (this.number(record.fields['价格']) || 0), 0);
     const expectedControlIds = this.expectedControlIds(approvalType);
     const controls = this.definitionControls(definition);
     const actualControlIds = new Set(controls.map((control) => control.id));
@@ -589,7 +590,7 @@ export class PaymentService {
         if (!contactId) errors.push(`审批必填项“${name}”无法自动带出，请检查关联项目的发起人。`);
       } else if (control.type === 'amount') {
         if (approvalType === 'Cloud' && name === '对方收款金额') {
-          if (input && !(Number(input.counterpartyAmount) > 0)) errors.push('审批必填项“对方收款金额”必须大于 0，请在插件中填写。');
+          if (totalPrice <= 0) errors.push('审批必填项“对方收款金额”必须大于 0，请填写付款执行明细的价格。');
         } else if (totalAmount <= 0) {
           errors.push(`审批必填项“${name}”必须大于 0，请填写付款执行明细的实际成本。`);
         }
@@ -1181,7 +1182,6 @@ export class PaymentService {
       Errors: errors,
       RequiredUploads: this.requiredUploads(records, definition),
       PaymentEntityOptions: [...this.config.paymentEntityOptions],
-      CounterpartyAmount: null,
       Records: items,
     };
   }
@@ -1397,7 +1397,7 @@ export class PaymentService {
   async submit(
     req: Request,
     res: Response,
-    input: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; counterpartyAmount?: number; confirmed?: boolean; allowValidationErrors?: boolean },
+    input: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; confirmed?: boolean; allowValidationErrors?: boolean },
     files: UploadedPaymentFile[] = [],
   ) {
     if (input.confirmed !== true) throw new HttpException('提交前需要明确确认', HttpStatus.BAD_REQUEST);
@@ -1424,7 +1424,6 @@ export class PaymentService {
     if (invoiceFiles.some((file) => file.size <= 0)) blockingErrors.push('发票附件中存在空文件，请重新选择。');
     if (approvalType === 'Corporate' && invoiceFiles.length === 0) blockingErrors.push('对公付款必须上传发票。');
     if (approvalType === 'Corporate' && evidenceFiles.length === 0) blockingErrors.push('对公付款必须上传对账凭证。');
-    if (approvalType === 'Cloud' && !(Number(input.counterpartyAmount) > 0)) blockingErrors.push('云账户批量付款必须填写大于 0 的对方收款金额。');
     for (const upload of this.requiredUploads(records, definition)) {
       if (upload.Key === 'qr' && upload.Required && !qrFile) {
         blockingErrors.push(`审批必填项“${upload.Name}”尚未上传，请在付款提审台补充后再提交。`);
@@ -1523,7 +1522,7 @@ export class PaymentService {
           { id: widgets.projectCode, type: 'input', value: projectCode || '' },
           { id: widgets.reason, type: 'textarea', value: reason },
           { id: widgets.detail, type: 'attachmentV2', value: detailCodes },
-          { id: widgets.receivedAmount, type: 'amount', value: Number(input.counterpartyAmount), currency: 'CNY' },
+          { id: widgets.receivedAmount, type: 'amount', value: totalPrice, currency: 'CNY' },
           { id: widgets.amountWithFee, type: 'amount', value: Math.round(totalCost * 1.0665 * 100) / 100, currency: 'CNY' },
           { id: widgets.date, type: 'date', value: `${input.expectedPaymentDate}T00:00:00+08:00` },
         ];

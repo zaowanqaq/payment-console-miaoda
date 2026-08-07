@@ -77,7 +77,6 @@ export type BatchPreview = {
   Errors: string[];
   RequiredUploads: RequiredUpload[];
   PaymentEntityOptions: string[];
-  CounterpartyAmount: number | null;
   Records: BatchRecord[];
 };
 

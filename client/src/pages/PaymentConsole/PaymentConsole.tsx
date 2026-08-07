@@ -79,7 +79,6 @@ function App() {
   const [invoiceFiles, setInvoiceFiles] = useState<File[]>([])
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([])
   const [deliverableFiles, setDeliverableFiles] = useState<File[]>([])
-  const [counterpartyAmount, setCounterpartyAmount] = useState<number | null>(null)
   const captureRef = useRef<HTMLDivElement | null>(null)
   const refreshPromiseRef = useRef<Promise<void> | null>(null)
   const loadedOnceRef = useRef(false)
@@ -223,9 +222,8 @@ function App() {
   const approvalType = preview?.ApprovalType
   const requiredQr = Boolean(preview?.RequiredUploads.some((upload) => upload.Key === 'qr' && upload.Required))
   const requiredCorporateUploads = approvalType !== 'Corporate' || (invoiceFiles.length > 0 && evidenceFiles.length > 0)
-  const requiredCounterpartyAmount = approvalType !== 'Cloud' || Number(counterpartyAmount) > 0
   const paymentEntityReady = approvalType !== 'Corporate' || paymentEntity.trim()
-  const uploadsReady = (!requiredQr || Boolean(qrFile)) && requiredCorporateUploads && requiredCounterpartyAmount
+  const uploadsReady = (!requiredQr || Boolean(qrFile)) && requiredCorporateUploads
   const isReady = Boolean(preview?.RecordCount && !hasBlockingErrors && uploadsReady && (preview.CanSubmit || allowValidationErrors) && reason.trim() && paymentEntityReady && expectedPaymentDate && !submitting)
   const rowErrorCount = useMemo(
     () => preview?.Records.filter((record) => record.Errors.length > 0).length ?? 0,
@@ -243,7 +241,6 @@ function App() {
     setInvoiceFiles([])
     setEvidenceFiles([])
     setDeliverableFiles([])
-    setCounterpartyAmount(null)
   }, [selectedRecordKey])
 
   if (isOAuthCallback) {
@@ -278,7 +275,7 @@ function App() {
       })
       const screenshot = new File([screenshotBlob], '付款执行明细.png', { type: 'image/png' })
       const nextResult = await api.submit(
-        { reason, paymentEntity, expectedPaymentDate, counterpartyAmount, allowValidationErrors },
+        { reason, paymentEntity, expectedPaymentDate, allowValidationErrors },
         { detailScreenshot: screenshot, qrFile, invoiceFiles, evidenceFiles, deliverableFiles },
       )
       setSubmitStage(5)
@@ -287,7 +284,6 @@ function App() {
       setInvoiceFiles([])
       setEvidenceFiles([])
       setDeliverableFiles([])
-      setCounterpartyAmount(null)
       void refresh()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '提审失败')
@@ -487,11 +483,6 @@ function App() {
             </label>
 
             {approvalType === 'Cloud' && (<>
-              <label>
-                <span>对方收款金额</span>
-                <input type="number" min="0.01" step="0.01" value={counterpartyAmount ?? ''} onChange={(event) => setCounterpartyAmount(event.target.value ? Number(event.target.value) : null)} placeholder="请输入对方实际收款金额" />
-                <small className="file-hint">手动填写，不使用付款执行明细的实际成本</small>
-              </label>
               <label>
                 <span>期望付款日期</span>
                 <input type="date" value={expectedPaymentDate} onChange={(event) => setExpectedPaymentDate(event.target.value)} />

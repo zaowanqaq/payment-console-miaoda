@@ -58,7 +58,7 @@ export class PaymentController {
     @Body() body: { payload?: string },
     @UploadedFiles() files: Array<{ fieldname: string; originalname: string; mimetype: string; size: number; buffer: Buffer }> = [],
   ) {
-    let payload: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; counterpartyAmount?: number; confirmed?: boolean; allowValidationErrors?: boolean };
+    let payload: { reason?: string; paymentEntity?: string; expectedPaymentDate?: string; confirmed?: boolean; allowValidationErrors?: boolean };
     try {
       payload = JSON.parse(body.payload || '{}') as typeof payload;
     } catch {

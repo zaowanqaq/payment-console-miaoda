@@ -54,7 +54,7 @@ export const api = {
       viewId: context.viewId || '',
     })}`),
   submit: (
-    input: { reason: string; paymentEntity: string; expectedPaymentDate: string; counterpartyAmount: number | null; allowValidationErrors: boolean },
+    input: { reason: string; paymentEntity: string; expectedPaymentDate: string; allowValidationErrors: boolean },
     files: { detailScreenshot: File; qrFile?: File | null; invoiceFiles?: File[]; evidenceFiles?: File[]; deliverableFiles?: File[] },
   ) => {
     if (new URLSearchParams(window.location.search).has('demo')) {
