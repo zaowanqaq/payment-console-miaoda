@@ -591,8 +591,8 @@ export class PaymentService {
       } else if (control.type === 'amount') {
         if (approvalType === 'Cloud' && name === '对方收款金额') {
           if (totalPrice <= 0) errors.push('审批必填项“对方收款金额”必须大于 0，请填写付款执行明细的价格。');
-        } else if (totalAmount <= 0) {
-          errors.push(`审批必填项“${name}”必须大于 0，请填写付款执行明细的实际成本。`);
+        } else if ((approvalType === 'Cloud' ? totalPrice : totalAmount) <= 0) {
+          errors.push(`审批必填项“${name}”必须大于 0，请填写付款执行明细的${approvalType === 'Cloud' ? '价格' : '实际成本'}。`);
         }
       } else if (control.type === 'input') {
         const value = name === '项目名称'
