@@ -1136,8 +1136,10 @@ export class PaymentService {
       Errors: this.recordErrors(record),
     }));
     const totalAmount = items.reduce((sum, item) => sum + (item.Cost || 0), 0);
+    const totalPrice = records.reduce((sum, record) => sum + (this.number(record.fields['价格']) || 0), 0);
     const serviceFeeRate = approvalType === 'Cloud' || approvalType === 'CloudSingle' ? 0.0665 : 0;
-    const approvalAmount = Math.round(totalAmount * (1 + serviceFeeRate) * 100) / 100;
+    const feeBaseAmount = approvalType === 'Cloud' ? totalPrice : totalAmount;
+    const approvalAmount = Math.round(feeBaseAmount * (1 + serviceFeeRate) * 100) / 100;
     return {
       Action: 'Preview',
       ApprovalType: approvalType,
@@ -1436,7 +1438,6 @@ export class PaymentService {
     const recordIds = records.map((record) => record.recordId);
     const totalAmount = records.reduce((sum, record) => sum + this.paymentAmount(record, approvalType), 0);
     const totalPrice = records.reduce((sum, record) => sum + (this.number(record.fields['价格']) || 0), 0);
-    const totalCost = records.reduce((sum, record) => sum + (this.number(record.fields['实际成本']) || 0), 0);
     const paymentEntity = input.paymentEntity?.trim() || '';
     if (approvalType === 'Corporate' && !this.config.paymentEntityOptions.includes(paymentEntity as (typeof this.config.paymentEntityOptions)[number])) {
       throw new HttpException('付款主体必须从选项中选择：' + this.config.paymentEntityOptions.join('、') + '。', HttpStatus.BAD_REQUEST);
@@ -1523,7 +1524,7 @@ export class PaymentService {
           { id: widgets.reason, type: 'textarea', value: reason },
           { id: widgets.detail, type: 'attachmentV2', value: detailCodes },
           { id: widgets.receivedAmount, type: 'amount', value: totalPrice, currency: 'CNY' },
-          { id: widgets.amountWithFee, type: 'amount', value: Math.round(totalCost * 1.0665 * 100) / 100, currency: 'CNY' },
+          { id: widgets.amountWithFee, type: 'amount', value: Math.round(totalPrice * 1.0665 * 100) / 100, currency: 'CNY' },
           { id: widgets.date, type: 'date', value: `${input.expectedPaymentDate}T00:00:00+08:00` },
         ];
       } else if (approvalType === 'Wallet') {
@@ -1589,7 +1590,11 @@ export class PaymentService {
         Action: 'Submit', BatchId: batchId, ApprovalType: approvalType, ExecutionMode: 'Approval', Submitted: true,
         InstanceCode: created.instance_code, InstanceLink: finalLink, SerialNumber: serialNumber, RecordCount: records.length,
         BaseAmount: totalAmount,
-        AmountWithServiceFee: approvalType === 'Cloud' || approvalType === 'CloudSingle' ? Math.round(totalAmount * 1.0665 * 100) / 100 : totalAmount,
+        AmountWithServiceFee: approvalType === 'Cloud'
+          ? Math.round(totalPrice * 1.0665 * 100) / 100
+          : approvalType === 'CloudSingle'
+            ? Math.round(totalAmount * 1.0665 * 100) / 100
+            : totalAmount,
       };
     } catch (error) {
       const detail = this.friendlyApprovalError(error, definition);
