@@ -29,6 +29,7 @@ export class PaymentConfig {
   readonly paymentSyncTableId = required('PAYMENT_SYNC_TABLE_ID');
   readonly cloudSyncTableId = required('CLOUD_SYNC_TABLE_ID');
   readonly walletSyncTableId = required('WALLET_SYNC_TABLE_ID');
+  readonly contractSyncTableId = optional('CONTRACT_SYNC_TABLE_ID') || 'tbliBFC0mP9c15fS';
   readonly corporateApprovalCode = optional('PROJECT_APPROVAL_CODE') || '209D8A1F-ABA3-4E0B-8110-D32A1DC1E0EE';
   readonly walletApprovalCode = optional('WALLET_APPROVAL_CODE') || 'B371918A-58C5-469D-99DF-76FB02F9BCFA';
   readonly cloudApprovalCode = optional('CLOUD_APPROVAL_CODE') || '2F29FCB6-ED2D-48AB-A064-C1C27FD4F988';

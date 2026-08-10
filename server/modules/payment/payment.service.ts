@@ -399,7 +399,10 @@ export class PaymentService {
     const approvalTypes = [...new Set(records.map((record) => this.resolveApprovalType([record])))];
     if (approvalTypes.length !== 1) errors.push('不同付款方式不能混合提审。');
     if (approvalType === 'Unknown') errors.push('付款形式为空、未识别或同一批次包含多种付款形式。');
-    if (approvalType === 'CloudSingle' && records.length !== 1) errors.push('云账户单人付款每次只能勾选一条付款明细。');
+    if (approvalType === 'CloudSingle') {
+      const resourceIds = [...new Set(records.flatMap(({ fields }) => this.linkIds(fields['关联资源'])))];
+      if (resourceIds.length !== 1) errors.push('云账户单人付款可勾选多条明细，但必须关联同一个资源。');
+    }
     if (approvalType === 'Cloud') {
       const recipientEntities = records.map((record) => this.text(record.fields['承接主体（自动带出）']));
       records.forEach((record, index) => {
@@ -591,8 +594,8 @@ export class PaymentService {
       } else if (control.type === 'amount') {
         if (approvalType === 'Cloud' && name === '对方收款金额') {
           if (totalPrice <= 0) errors.push('审批必填项“对方收款金额”必须大于 0，请填写付款执行明细的价格。');
-        } else if ((approvalType === 'Cloud' ? totalPrice : totalAmount) <= 0) {
-          errors.push(`审批必填项“${name}”必须大于 0，请填写付款执行明细的${approvalType === 'Cloud' ? '价格' : '实际成本'}。`);
+        } else if (totalAmount <= 0) {
+          errors.push(`审批必填项“${name}”必须大于 0，请填写付款执行明细的实际成本。`);
         }
       } else if (control.type === 'input') {
         const value = name === '项目名称'
@@ -753,10 +756,11 @@ export class PaymentService {
 
   private async resolveLinkages(token: string, records: BaseRecord[]): Promise<BaseRecord[]> {
     if (!records.length) return records;
-    const [projects, resources, closures] = await Promise.all([
+    const [projects, resources, closures, contracts] = await Promise.all([
       this.listTableRecords(token, this.config.projectSyncTableId),
       this.listTableRecords(token, this.config.resourceSyncTableId),
       this.listClosureSyncRecords(token),
+      this.listTableRecords(token, this.config.contractSyncTableId),
     ]);
     const approvedClosures = this.approved(closures);
     const nowText = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai', dateStyle: 'short', timeStyle: 'medium' }).format(new Date());
@@ -767,8 +771,11 @@ export class PaymentService {
       const errors: string[] = [];
       const projectIds = this.linkIds(record.fields['关联项目']);
       const resourceIds = this.linkIds(record.fields['关联资源']);
+      const contractIds = this.linkIds(record.fields['关联合同']);
       const projectRecord = projectIds.length === 1 ? projects.find((item) => item.recordId === projectIds[0]) : undefined;
       const resourceRecord = resourceIds.length === 1 ? resources.find((item) => item.recordId === resourceIds[0]) : undefined;
+      const contractRecord = contractIds.length === 1 ? contracts.find((item) => item.recordId === contractIds[0]) : undefined;
+      const contractInstanceCode = this.approvalInstanceCode(contractRecord?.fields['SourceID']);
       let resourceAccount: ParsedResourceAccount | null = null;
       if (resourceRecord) {
         resourceAccount = accountCache.get(resourceRecord.recordId) || null;
@@ -807,6 +814,9 @@ export class PaymentService {
         '开户省（自动带出）': resourceAccount?.province ?? record.fields['对公-开户省（自动带出）'],
         '开户市（自动带出）': resourceAccount?.city ?? record.fields['对公-开户市（自动带出）'],
         '账户类型（自动带出）': resourceAccount?.accountType ?? record.fields['对公-账户类型（自动带出）'],
+        '合同-乙方公司全称': record.fields['合同-乙方公司全称'] ?? contractRecord?.fields['乙方全称'],
+        '合同word版': record.fields['合同word版'] ?? contractRecord?.fields['合同【word版】'],
+        '合同审批实例Code（插件解析）': contractInstanceCode,
         '付款联系人OpenId（自动带出）': projectInitiatorId,
         ...this.paymentAccountPatch(resourceAccount),
       };
@@ -1137,8 +1147,8 @@ export class PaymentService {
     }));
     const totalAmount = items.reduce((sum, item) => sum + (item.Cost || 0), 0);
     const totalPrice = records.reduce((sum, record) => sum + (this.number(record.fields['价格']) || 0), 0);
-    const serviceFeeRate = approvalType === 'Cloud' || approvalType === 'CloudSingle' ? 0.0665 : 0;
-    const feeBaseAmount = approvalType === 'Cloud' ? totalPrice : totalAmount;
+    const serviceFeeRate = 0;
+    const feeBaseAmount = totalAmount;
     const approvalAmount = Math.round(feeBaseAmount * (1 + serviceFeeRate) * 100) / 100;
     return {
       Action: 'Preview',
@@ -1199,7 +1209,7 @@ export class PaymentService {
       const columns = [
         '付款批次号', '付款记录ID', '项目编号', '项目名称', '资源账号', '收款对象',
         '真实姓名', '银行卡号', '身份证号', '联系电话',
-        '对应合同', '承接主体', '平台类型', '账号', '话题内容', '链接', '实际成本', '价格', '税点', '付款方式',
+        '对应合同', '关联合同', '合同-乙方公司全称', '合同word版', '承接主体', '平台类型', '账号', '话题内容', '链接', '实际成本', '价格', '税点', '付款方式',
       ];
       const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
       const rows = records.map((record) => [
@@ -1207,7 +1217,7 @@ export class PaymentService {
         this.text(record.fields['项目名称']), this.text(record.fields['资源账号（自动带出）']), this.recordName(record),
         this.text(record.fields['收款人（自动带出）']), this.text(record.fields['银行卡号（自动带出）']),
         this.text(record.fields['身份证号（自动带出）']), this.text(record.fields['联系电话（自动带出）']),
-        this.text(record.fields['对应合同（自动带出）']), this.text(record.fields['承接主体（自动带出）']), this.text(record.fields['平台/合作需求类型']),
+        this.text(record.fields['对应合同（自动带出）']), this.linkIds(record.fields['关联合同']).join('、'), this.text(record.fields['合同-乙方公司全称']), this.text(record.fields['合同word版']), this.text(record.fields['承接主体（自动带出）']), this.text(record.fields['平台/合作需求类型']),
         this.text(record.fields['账号']), this.text(record.fields['话题/内容']), this.text(record.fields['链接']),
         this.number(record.fields['实际成本']), this.number(record.fields['价格']), this.text(record.fields['税点']), this.text(record.fields['付款形式']),
       ]);
@@ -1215,19 +1225,21 @@ export class PaymentService {
     }
     const columns = [
       '付款批次号', '付款记录ID', '项目编号', '项目名称', '资源账号', '收款人',
+      '批量付款-收款人名字', '批量付款-收款人银行卡号', '批量付款-收款人身份证号', '批量付款-收款人手机号',
       '收款户名', '收款账号', '开户银行', '开户支行', '开户省', '开户市', '账户类型',
-      '对应合同', '平台类型', '账号', '话题内容', '链接', '实际成本', '税点', '付款方式',
+      '对应合同', '关联合同', '合同-乙方公司全称', '合同word版', '平台类型', '账号', '话题内容', '链接', '实际成本', '价格', '税点', '付款方式',
     ];
     const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const rows = records.map((record) => [
       batchId, record.recordId, this.text(record.fields['项目编号（自动带出）']),
       this.text(record.fields['项目名称']), this.text(record.fields['资源账号（自动带出）']), this.text(record.fields['收款人（自动带出）']),
+      this.text(record.fields['批量付款-收款人名字']), this.text(record.fields['批量付款-收款人银行卡号']), this.text(record.fields['批量付款-收款人身份证号']), this.text(record.fields['批量付款-收款人手机号']),
       this.text(record.fields['收款户名（自动带出）']), this.text(record.fields['收款账号（自动带出）']),
       this.text(record.fields['开户银行（自动带出）']), this.text(record.fields['开户支行（自动带出）']),
       this.text(record.fields['开户省（自动带出）']), this.text(record.fields['开户市（自动带出）']),
-      this.text(record.fields['账户类型（自动带出）']), this.text(record.fields['对应合同（自动带出）']),
+      this.text(record.fields['账户类型（自动带出）']), this.text(record.fields['对应合同（自动带出）']), this.linkIds(record.fields['关联合同']).join('、'), this.text(record.fields['合同-乙方公司全称']), this.text(record.fields['合同word版']),
       this.text(record.fields['平台/合作需求类型']), this.text(record.fields['账号']), this.text(record.fields['话题/内容']), this.text(record.fields['链接']),
-      this.number(record.fields['实际成本']), this.text(record.fields['税点']), this.text(record.fields['付款形式']),
+      this.number(record.fields['实际成本']), this.number(record.fields['价格']), this.text(record.fields['税点']), this.text(record.fields['付款形式']),
     ]);
     return Buffer.from(`\uFEFF${[columns, ...rows].map((row) => row.map(quote).join(',')).join('\r\n')}`, 'utf8');
   }
@@ -1236,27 +1248,30 @@ export class PaymentService {
     token: string,
     records: BaseRecord[],
     fieldNames = ['发票附件', '对账凭证', '验收/凭证附件'],
+    tableId = this.config.paymentTableId,
   ): Promise<AttachmentEntry[]> {
     const expected = new Set(records.flatMap((record) => fieldNames
       .flatMap((fieldName) => this.attachmentEntries(record.fields[fieldName]).map((item) => item.fileToken))));
-    if (!expected.size) return [];
+    if (!records.length) return [];
     const payload = await this.feishu.api<{ attachments: Record<string, Record<string, AttachmentEntry[] & { extra_info?: string }>> }>(
-      `base/v3/bases/${this.config.baseToken}/tables/${this.config.paymentTableId}/get_attachments`,
+      `base/v3/bases/${this.config.baseToken}/tables/${tableId}/get_attachments`,
       token,
       { method: 'POST', body: JSON.stringify({ record_id_list: records.map((record) => record.recordId) }) },
     );
     const result: AttachmentEntry[] = [];
     for (const fields of Object.values(payload.attachments || {})) {
-      for (const items of Object.values(fields || {})) {
+      for (const [fieldName, items] of Object.entries(fields || {})) {
+        if (!expected.size && !fieldNames.includes(fieldName)) continue;
         for (const item of items as unknown as Array<Record<string, unknown>>) {
           const fileToken = String(item.file_token || item.fileToken || '');
-          if (expected.has(fileToken) && !result.some((existing) => existing.fileToken === fileToken)) {
+          if ((expected.has(fileToken) || (!expected.size && fieldNames.includes(fieldName)))
+            && !result.some((existing) => existing.fileToken === fileToken)) {
             result.push({ fileToken, name: String(item.name || fileToken), size: Number(item.size || 0), extraInfo: String(item.extra_info || '') });
           }
         }
       }
     }
-    if (result.length !== expected.size) throw new Error('部分付款附件无法解析，请刷新记录后重试');
+    if (expected.size && result.length !== expected.size) throw new Error('部分付款附件无法解析，请刷新记录后重试');
     return result;
   }
 
@@ -1466,10 +1481,23 @@ export class PaymentService {
       ]);
       const baseDetailCodes = [screenshotCode, csvCode];
       const deliverableAttachments = await this.resolvedAttachments(token, records, ['交付物']);
-      const [uploadedEvidenceCodes, qrCode, resolvedDeliverableCodes] = await Promise.all([
+      const contractRecords = approvalType === 'Corporate'
+        ? (await this.listTableRecords(token, this.config.contractSyncTableId)).filter((contract) => records.some((record) =>
+          this.linkIds(record.fields['关联合同']).includes(contract.recordId)))
+        : [];
+      const contractWordAttachments = approvalType === 'Corporate'
+        ? await this.resolvedAttachments(token, contractRecords, ['合同【word版】'], this.config.contractSyncTableId)
+        : [];
+      const [uploadedEvidenceCodes, qrCode, resolvedDeliverableCodes, contractWordCodes] = await Promise.all([
         Promise.all(evidenceFiles.map((file) => this.uploadApprovalFile(file.buffer, file.originalname, file.mimetype))),
         qrFile ? this.uploadApprovalFile(qrFile.buffer, qrFile.originalname, qrFile.mimetype, 'image') : Promise.resolve(null),
         Promise.all(deliverableAttachments.map(async (attachment) => {
+          const query = new URLSearchParams();
+          if (attachment.extraInfo) query.set('extra', attachment.extraInfo);
+          const downloaded = await this.feishu.download(`drive/v1/medias/${attachment.fileToken}/download?${query}`, token);
+          return this.uploadApprovalFile(downloaded.buffer, attachment.name, downloaded.contentType);
+        })),
+        Promise.all(contractWordAttachments.map(async (attachment) => {
           const query = new URLSearchParams();
           if (attachment.extraInfo) query.set('extra', attachment.extraInfo);
           const downloaded = await this.feishu.download(`drive/v1/medias/${attachment.fileToken}/download?${query}`, token);
@@ -1479,7 +1507,7 @@ export class PaymentService {
       const uploadedDeliverableCodes = await Promise.all(deliverableFiles.map((file) => this.uploadApprovalFile(file.buffer, file.originalname, file.mimetype)));
       const evidenceCodes = uploadedEvidenceCodes;
       const deliverableCodes = [...resolvedDeliverableCodes, ...uploadedDeliverableCodes];
-      const detailCodes = baseDetailCodes;
+      const detailCodes = approvalType === 'Corporate' ? [...baseDetailCodes, ...contractWordCodes] : baseDetailCodes;
       const qrCodes = qrCode ? [qrCode] : [];
       await this.updateRecords(token, recordIds, {
         '付款批次号': batchId,
@@ -1503,7 +1531,7 @@ export class PaymentService {
           { id: widgets.recipient, type: 'input', value: this.recordName(records[0]) },
           { id: widgets.reason, type: 'textarea', value: reason },
           { id: widgets.detail, type: 'attachmentV2', value: detailCodes },
-          { id: widgets.amountWithFee, type: 'amount', value: Math.round(totalAmount * 1.0665 * 100) / 100, currency: 'CNY' },
+          { id: widgets.amountWithFee, type: 'amount', value: totalAmount, currency: 'CNY' },
           { id: widgets.date, type: 'date', value: `${input.expectedPaymentDate}T00:00:00+08:00` },
           { id: widgets.bankCard, type: 'input', value: this.text(records[0]?.fields['银行卡号（自动带出）']) || '' },
           { id: widgets.realName, type: 'input', value: this.text(records[0]?.fields['收款人（自动带出）']) || '' },
@@ -1524,7 +1552,7 @@ export class PaymentService {
           { id: widgets.reason, type: 'textarea', value: reason },
           { id: widgets.detail, type: 'attachmentV2', value: detailCodes },
           { id: widgets.receivedAmount, type: 'amount', value: totalPrice, currency: 'CNY' },
-          { id: widgets.amountWithFee, type: 'amount', value: Math.round(totalPrice * 1.0665 * 100) / 100, currency: 'CNY' },
+          { id: widgets.amountWithFee, type: 'amount', value: totalAmount, currency: 'CNY' },
           { id: widgets.date, type: 'date', value: `${input.expectedPaymentDate}T00:00:00+08:00` },
         ];
       } else if (approvalType === 'Wallet') {
@@ -1540,7 +1568,9 @@ export class PaymentService {
         ];
       } else {
         const widgets = this.config.corporateWidgets;
-        const contractCodes = this.contractInstanceCodes(records[0]?.fields['对应合同（自动带出）']);
+        const contractCodes = this.contractInstanceCodes(
+          records[0]?.fields['合同审批实例Code（插件解析）'] || records[0]?.fields['对应合同（自动带出）'],
+        );
         form = [
           { id: widgets.recipient, type: 'input', value: this.recordName(records[0]) },
           { id: widgets.reason, type: 'textarea', value: reason },
@@ -1590,11 +1620,7 @@ export class PaymentService {
         Action: 'Submit', BatchId: batchId, ApprovalType: approvalType, ExecutionMode: 'Approval', Submitted: true,
         InstanceCode: created.instance_code, InstanceLink: finalLink, SerialNumber: serialNumber, RecordCount: records.length,
         BaseAmount: totalAmount,
-        AmountWithServiceFee: approvalType === 'Cloud'
-          ? Math.round(totalPrice * 1.0665 * 100) / 100
-          : approvalType === 'CloudSingle'
-            ? Math.round(totalAmount * 1.0665 * 100) / 100
-            : totalAmount,
+        AmountWithServiceFee: totalAmount,
       };
     } catch (error) {
       const detail = this.friendlyApprovalError(error, definition);
