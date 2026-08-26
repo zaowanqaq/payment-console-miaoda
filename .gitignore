@@ -64,3 +64,8 @@ pnpm-lock.yaml
 
 # Agent files
 .agent/
+
+# OrangeConnex sync secrets
+orangeconnex-sync/config.py
+orangeconnex-sync/session.json
+orangeconnex-sync/__pycache__/
