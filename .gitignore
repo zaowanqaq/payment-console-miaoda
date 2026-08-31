@@ -64,3 +64,4 @@ pnpm-lock.yaml
 
 # Agent files
 .agent/
+.codex-tmp/
